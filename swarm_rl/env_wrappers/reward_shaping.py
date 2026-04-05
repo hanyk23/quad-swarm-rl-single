@@ -6,7 +6,8 @@ from sample_factory.envs.env_utils import TrainingInfoInterface, RewardShapingIn
 
 DEFAULT_QUAD_REWARD_SHAPING_SINGLE = dict(
     quad_rewards=dict(
-        pos=1.0, effort=0.05, spin=0.1, vel=0.0, crash=1.0, orient=1.0, yaw=0.0
+        pos=3.5, effort=0.15, spin=0.4, vel=0.1, crash=1.0, orient=0.5, yaw=0.0, rot=0.0, attitude=0.05, z=0.2,
+        stable_z=0.15, stable_spin=0.08
     ),
 )
 

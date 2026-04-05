@@ -15,12 +15,16 @@ class Scenario_o_random(Scenario_o_base):
     def step(self):
         tick = self.envs[0].tick
 
-        if tick <= self.duration_step:
-            return
+        if self.current_waypoint_idx < len(self.waypoints) - 1:
+            curr_goal = self.waypoints[self.current_waypoint_idx]
+            current_pos = self.envs[0].dynamics.pos
+            dist_to_goal = np.linalg.norm(curr_goal - current_pos)
+            if dist_to_goal < self.waypoint_threshold or tick > self.duration_step:
+                self.current_waypoint_idx += 1
+                self.duration_step += int(self.envs[0].ep_time * self.envs[0].control_freq)
 
-        self.duration_step += int(self.envs[0].ep_time * self.envs[0].control_freq)
         for i, env in enumerate(self.envs):
-            env.goal = self.end_point[i]
+            env.goal = self.waypoints[self.current_waypoint_idx]
 
         return
 
@@ -33,20 +37,17 @@ class Scenario_o_random(Scenario_o_base):
         obst_map_locs = np.where(self.obstacle_map == 0)
         self.free_space = list(zip(*obst_map_locs))
 
-        self.start_point = []
-        self.end_point = []
-        for i in range(self.num_agents):
-            self.start_point.append(self.generate_pos_obst_map())
-            self.end_point.append(self.generate_pos_obst_map())
+        self.start_point = self.generate_pos_obst_map_side_batch(side='left', num_agents=self.num_agents)
+        self.mid_points = self.generate_pos_obst_map_side_batch(side='center', num_agents=2)
+        self.end_point = self.generate_pos_obst_map_side_batch(side='right', num_agents=self.num_agents)
 
-        self.start_point = self.generate_pos_obst_map_2(num_agents=self.num_agents)
-        self.end_point = self.generate_pos_obst_map_2(num_agents=self.num_agents)
-        # self.start_point = self.generate_pos_obst_map_2(self.num_agents)
-        # self.end_point = self.generate_pos_obst_map_2(self.num_agents)
+        self.waypoints = [self.mid_points[0], self.mid_points[1], self.end_point[0]]
+        self.current_waypoint_idx = 0
+        self.waypoint_threshold = 0.7
 
         self.duration_step = int(np.random.uniform(low=2.0, high=4.0) * self.envs[0].control_freq)
         self.update_formation_and_relate_param()
 
         self.formation_center = np.array((0., 0., 2.))
         self.spawn_points = copy.deepcopy(self.start_point)
-        self.goals = copy.deepcopy(self.end_point)
+        self.goals = np.array([self.waypoints[0]])

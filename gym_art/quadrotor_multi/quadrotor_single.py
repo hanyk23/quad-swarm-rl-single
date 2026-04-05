@@ -53,9 +53,23 @@ def compute_reward_weighted(dynamics, goal, action, dt, time_remain, rew_coeff, 
     cost_spin_raw = (dynamics.omega[0] ** 2 + dynamics.omega[1] ** 2 + dynamics.omega[2] ** 2) ** 0.5
     cost_spin = rew_coeff["spin"] * cost_spin_raw
 
+    # Velocity penalty to slow down aggressive flight
+    cost_vel_raw = np.linalg.norm(dynamics.vel)
+    cost_vel = rew_coeff.get("vel", 0.0) * cost_vel_raw
+
+    # Low altitude penalty to keep the quad higher above the ground
+    cost_z_raw = max(0.0, 2.5 - dynamics.pos[2])
+    cost_z = rew_coeff.get("z", 0.0) * cost_z_raw
+
     # Loss crash for staying on the floor
     cost_crash_raw = float(on_floor)
     cost_crash = rew_coeff["crash"] * cost_crash_raw
+
+    # Stability bonus: keep target altitude and low angular velocity
+    stable_z_raw = max(0.0, 0.25 - abs(dynamics.pos[2] - 1.5))
+    stable_spin_raw = max(0.0, 1.0 - np.linalg.norm(dynamics.omega))
+    stable_z_bonus = rew_coeff.get("stable_z", 0.0) * stable_z_raw
+    stable_spin_bonus = rew_coeff.get("stable_spin", 0.0) * stable_spin_raw
 
     reward = -dt * np.sum([
         cost_pos,
@@ -63,15 +77,21 @@ def compute_reward_weighted(dynamics, goal, action, dt, time_remain, rew_coeff, 
         cost_crash,
         cost_orient,
         cost_spin,
-    ])
+        cost_vel,
+        cost_z,
+    ]) + dt * (stable_z_bonus + stable_spin_bonus)
 
     rew_info = {
-        "rew_main": -cost_pos,
+        "rew_main": -cost_pos + stable_z_bonus + stable_spin_bonus,
         'rew_pos': -cost_pos,
         'rew_action': -cost_effort,
         'rew_crash': -cost_crash,
         "rew_orient": -cost_orient,
         "rew_spin": -cost_spin,
+        "rew_vel": -cost_vel,
+        "rew_z": -cost_z,
+        "rew_stable_z": stable_z_bonus,
+        "rew_stable_spin": stable_spin_bonus,
 
         "rewraw_main": -cost_pos_raw,
         'rewraw_pos': -cost_pos_raw,
@@ -79,6 +99,10 @@ def compute_reward_weighted(dynamics, goal, action, dt, time_remain, rew_coeff, 
         'rewraw_crash': -cost_crash_raw,
         "rewraw_orient": -cost_orient_raw,
         "rewraw_spin": -cost_spin_raw,
+        "rewraw_vel": -cost_vel_raw,
+        "rewraw_z": -cost_z_raw,
+        "rewraw_stable_z": stable_z_raw,
+        "rewraw_stable_spin": stable_spin_raw,
     }
 
     for k, v in rew_info.items():

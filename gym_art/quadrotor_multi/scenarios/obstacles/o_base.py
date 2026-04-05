@@ -80,6 +80,44 @@ class Scenario_o_base(QuadrotorScenario):
 
         return np.array(generated_points)
 
+    def generate_pos_obst_map_side(self, side='left', z_low=1.0, z_high=3.0):
+        width = self.obstacle_map.shape[0]
+        free_positions = []
+        for idx in range(len(self.free_space)):
+            x, y = self.free_space[idx]
+            index = x + (width * y)
+            pos_x, pos_y = self.cell_centers[index]
+            free_positions.append((pos_x, pos_y))
+
+        if len(free_positions) == 0:
+            raise ValueError('No free space available in obstacle map')
+
+        xs = np.array([p[0] for p in free_positions])
+        median_x = np.median(xs)
+        if side == 'left':
+            candidates = [p for p in free_positions if p[0] <= median_x]
+        elif side == 'right':
+            candidates = [p for p in free_positions if p[0] >= median_x]
+        elif side == 'center':
+            center_width = self.room_dims[0] * 0.25
+            lower = median_x - center_width
+            upper = median_x + center_width
+            candidates = [p for p in free_positions if lower <= p[0] <= upper]
+        else:
+            raise ValueError(f"Unknown side '{side}' for obstacle position generation")
+        if len(candidates) == 0:
+            candidates = free_positions
+
+        pos_x, pos_y = candidates[np.random.choice(len(candidates))]
+        z_list_start = np.random.uniform(low=z_low, high=z_high)
+        return np.array([pos_x, pos_y, z_list_start])
+
+    def generate_pos_obst_map_side_batch(self, side='left', num_agents=1):
+        generated_points = []
+        for _ in range(num_agents):
+            generated_points.append(self.generate_pos_obst_map_side(side))
+        return np.array(generated_points)
+
     def check_surroundings(self, row, col):
         length, width = self.obstacle_map.shape[0], self.obstacle_map.shape[1]
         obstacle_map = self.obstacle_map
