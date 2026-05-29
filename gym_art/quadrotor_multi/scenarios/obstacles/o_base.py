@@ -43,7 +43,7 @@ class Scenario_o_base(QuadrotorScenario):
 
         return
 
-    def reset(self, obst_map, cell_centers):
+    def reset(self, obst_map=None, cell_centers=None):
         self.start_point = self.generate_pos()
         self.end_point = self.generate_pos()
         self.duration_step = int(np.random.uniform(low=2.0, high=4.0) * self.envs[0].control_freq)
@@ -54,10 +54,12 @@ class Scenario_o_base(QuadrotorScenario):
         x, y = self.free_space[idx][0], self.free_space[idx][1]
         if check_surroundings:
             surroundings_free = self.check_surroundings(x, y)
-            while not surroundings_free:
+            retries = 0
+            while not surroundings_free and retries < 100:
                 idx = np.random.choice(a=len(self.free_space), replace=False)
                 x, y = self.free_space[idx][0], self.free_space[idx][1]
                 surroundings_free = self.check_surroundings(x, y)
+                retries += 1
 
         width = self.obstacle_map.shape[0]
         index = x + (width * y)
@@ -122,42 +124,25 @@ class Scenario_o_base(QuadrotorScenario):
         length, width = self.obstacle_map.shape[0], self.obstacle_map.shape[1]
         obstacle_map = self.obstacle_map
         # Check if the given position is out of bounds
-        if row < 0 or row >= width or col < 0 or col >= length:
+        if row < 0 or row >= length or col < 0 or col >= width:
             raise ValueError("Invalid position")
 
         # Check if the surrounding cells are all 0s
         check_pos_x, check_pos_y = [], []
-        if row > 0:
-            check_pos_x.append(row - 1)
-            check_pos_y.append(col)
-            if col > 0:
-                check_pos_x.append(row - 1)
-                check_pos_y.append(col - 1)
-            if col < length - 1:
-                check_pos_x.append(row - 1)
-                check_pos_y.append(col + 1)
-        if row < width - 1:
-            check_pos_x.append(row + 1)
-            check_pos_y.append(col)
+        for dr in [-1, 0, 1]:
+            for dc in [-1, 0, 1]:
+                if dr == 0 and dc == 0:
+                    continue
+                r_new, c_new = row + dr, col + dc
+                if 0 <= r_new < length and 0 <= c_new < width:
+                    check_pos_x.append(r_new)
+                    check_pos_y.append(c_new)
 
-        if col > 0:
-            check_pos_x.append(row)
-            check_pos_y.append(col - 1)
-        if col < length - 1:
-            check_pos_x.append(row)
-            check_pos_y.append(col + 1)
-            if row > 0:
-                check_pos_x.append(row - 1)
-                check_pos_y.append(col + 1)
-            if row < length - 1:
-                check_pos_x.append(row + 1)
-                check_pos_y.append(col + 1)
-
-        check_pos = ([check_pos_x, check_pos_y])
+        check_pos = (check_pos_x, check_pos_y)
         # Get the values of the adjacent cells
         adjacent_cells = obstacle_map[tuple(check_pos)]
 
-        return np.any(adjacent_cells != 0)
+        return not np.any(adjacent_cells != 0)
 
     def max_square_area_center(self):
         """

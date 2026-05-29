@@ -26,7 +26,8 @@ class QuadrotorEnvMulti(gym.Env):
                  neighbor_visible_num, neighbor_obs_type, collision_hitbox_radius, collision_falloff_radius,
 
                  # Obstacle
-                 use_obstacles, obst_density, obst_size, obst_spawn_area,
+                 use_obstacles, obst_density, obst_size, obst_spawn_area, obstacle_scan_resolution,
+                 obstacle_obs_type,
 
                  # Aerodynamics, Numba Speed Up, Scenarios, Room, Replay Buffer, Rendering
                  use_downwash, use_numba, quads_mode, room_dims, use_replay_buffer, quads_view_mode,
@@ -36,6 +37,7 @@ class QuadrotorEnvMulti(gym.Env):
                  dynamics_params, raw_control, raw_control_zero_middle,
                  dynamics_randomize_every, dynamics_change, dyn_sampler_1,
                  sense_noise, init_random_state,
+                 control_type='velocity_yaw', velocity_yaw_max_speed=3.0,
                  # Rendering
                  render_mode='human'
                  ):
@@ -43,6 +45,7 @@ class QuadrotorEnvMulti(gym.Env):
 
         # Predefined Parameters
         self.num_agents = num_agents
+        self.velocity_yaw_max_speed = velocity_yaw_max_speed
         obs_self_size = QUADS_OBS_REPR[obs_repr]
         if neighbor_visible_num == -1:
             self.num_use_neighbor_obs = self.num_agents - 1
@@ -70,6 +73,7 @@ class QuadrotorEnvMulti(gym.Env):
                 neighbor_obs_type=neighbor_obs_type, num_use_neighbor_obs=self.num_use_neighbor_obs,
                 # Obstacle
                 use_obstacles=use_obstacles,
+                control_type=control_type, velocity_yaw_max_speed=velocity_yaw_max_speed,
             )
             self.envs.append(e)
 
@@ -90,7 +94,9 @@ class QuadrotorEnvMulti(gym.Env):
         # Reward
         self.rew_coeff = dict(
             pos=1., effort=0.05, action_change=0., crash=1., orient=1., yaw=0., rot=0., attitude=0., spin=0.1, vel=0., z=0.,
-            stable_z=0.0, stable_spin=0.0,
+            vel_limit=3.0, stable_z=0.0, stable_spin=0.0, progress=0.0, success=0.0, floor_stall=0.0,
+            first_success=10.0,
+            room_floor=0.0, room_wall=0.0, room_ceiling=0.0,
             quadcol_bin=5., quadcol_bin_smooth_max=4., quadcol_bin_obst=5.
         )
         rew_coeff_orig = copy.deepcopy(self.rew_coeff)
@@ -129,6 +135,8 @@ class QuadrotorEnvMulti(gym.Env):
             self.num_obstacles = int(obst_density * obst_spawn_area[0] * obst_spawn_area[1])
             self.obst_map = None
             self.obst_size = obst_size
+            self.obstacle_scan_resolution = obstacle_scan_resolution
+            self.obstacle_obs_type = obstacle_obs_type
 
             # Log more info
             self.distance_to_goal_3_5 = 0
@@ -160,6 +168,7 @@ class QuadrotorEnvMulti(gym.Env):
         self.collisions_floor_per_episode = 0
         self.collisions_wall_per_episode = 0
         self.collisions_ceiling_per_episode = 0
+        self.time_since_last_collision = np.zeros(self.num_agents)
 
         self.prev_crashed_walls = []
         self.prev_crashed_ceiling = []
@@ -347,10 +356,24 @@ class QuadrotorEnvMulti(gym.Env):
 
         # Scenario reset
         if self.use_obstacles:
-            self.obstacles = MultiObstacles(obstacle_size=self.obst_size, quad_radius=self.quad_arm)
+            self.obstacles = MultiObstacles(
+                obstacle_size=self.obst_size,
+                quad_radius=self.quad_arm,
+                resolution=self.obstacle_scan_resolution,
+                room_dims=self.room_dims,
+                include_room_bounds=self.obstacle_obs_type == "lidar",
+            )
             self.obst_map, obst_pos_arr, cell_centers = self.obst_generation_given_density()
+            if hasattr(self.scenario, "goal_success_first"):
+                self.scenario.goal_success_first = self.rew_coeff.get("first_success", self.scenario.goal_success_first)
+            if hasattr(self.scenario, "goal_success_later"):
+                self.scenario.goal_success_later = self.rew_coeff.get("success", self.scenario.goal_success_later)
             self.scenario.reset(obst_map=self.obst_map, cell_centers=cell_centers)
         else:
+            if hasattr(self.scenario, "goal_success_first"):
+                self.scenario.goal_success_first = self.rew_coeff.get("first_success", self.scenario.goal_success_first)
+            if hasattr(self.scenario, "goal_success_later"):
+                self.scenario.goal_success_later = self.rew_coeff.get("success", self.scenario.goal_success_later)
             self.scenario.reset()
 
         # Replay buffer
@@ -366,6 +389,8 @@ class QuadrotorEnvMulti(gym.Env):
             else:
                 e.spawn_point = self.scenario.spawn_points[i]
             e.rew_coeff = self.rew_coeff
+            if hasattr(self.scenario, "goal_success_first"):
+                self.rew_coeff["success"] = self.scenario.goal_success_first
 
             observation = e.reset()
             obs.append(observation)
@@ -395,6 +420,7 @@ class QuadrotorEnvMulti(gym.Env):
         self.prev_crashed_walls = []
         self.prev_crashed_ceiling = []
         self.prev_crashed_room = []
+        self.time_since_last_collision = np.zeros(self.num_agents)
 
         # Log
         # # Final Distance (1s / 3s / 5s)
@@ -519,21 +545,70 @@ class QuadrotorEnvMulti(gym.Env):
             rew_collisions_obst_quad = self.rew_coeff["quadcol_bin_obst"] * rew_obst_quad_collisions_raw
 
         # 3) With room
-        # # TODO: reward penalty
+        rew_room_floor_raw = np.zeros(self.num_agents)
+        rew_room_wall_raw = np.zeros(self.num_agents)
+        rew_room_ceiling_raw = np.zeros(self.num_agents)
+        if len(floor_crash_list) > 0:
+            rew_room_floor_raw[floor_crash_list] = -1.0
+        if len(wall_crash_list) > 0:
+            rew_room_wall_raw[wall_crash_list] = -1.0
+        if len(ceiling_crash_list) > 0:
+            rew_room_ceiling_raw[ceiling_crash_list] = -1.0
+        rew_room_floor = self.rew_coeff["room_floor"] * rew_room_floor_raw
+        rew_room_wall = self.rew_coeff["room_wall"] * rew_room_wall_raw
+        rew_room_ceiling = self.rew_coeff["room_ceiling"] * rew_room_ceiling_raw
         if self.envs[0].tick >= self.collisions_grace_period_steps:
             self.collisions_room_per_episode += len(room_crash_list)
             self.collisions_floor_per_episode += len(floor_crash_list)
             self.collisions_wall_per_episode += len(wall_crash_list)
             self.collisions_ceiling_per_episode += len(ceiling_crash_list)
 
+        # 4) Survival reward without collisions
+        current_room_crashes = np.unique(np.concatenate([floor_crash_list, wall_crash_list, ceiling_crash_list]))
+        rew_survival = np.zeros(self.num_agents)
+        for i in range(self.num_agents):
+            is_collision = False
+            if rew_collisions_raw[i] < 0:
+                is_collision = True
+            if self.use_obstacles and rew_obst_quad_collisions_raw[i] < 0:
+                is_collision = True
+            if i in current_room_crashes:
+                is_collision = True
+            
+            if is_collision:
+                self.time_since_last_collision[i] = 0
+            else:
+                self.time_since_last_collision[i] += 1
+            
+            # Survival reward increases over time, with a cap to prevent just hovering
+            # e.g., max reward = 0.5 per second -> 0.5 * dt per step
+            # Let's say it reaches the max at 5 seconds (5 / dt steps)
+            max_survive_reward_rate = 0.5
+            time_to_max = 5.0
+            steps_to_max = time_to_max / self.control_dt
+            
+            reward_rate = max_survive_reward_rate * min(1.0, self.time_since_last_collision[i] / steps_to_max)
+            rew_survival[i] = reward_rate * self.control_dt
+
         # Reward & Info
         for i in range(self.num_agents):
             rewards[i] += rew_collisions[i]
             rewards[i] += rew_proximity[i]
+            rewards[i] += rew_room_floor[i]
+            rewards[i] += rew_room_wall[i]
+            rewards[i] += rew_room_ceiling[i]
+            rewards[i] += rew_survival[i]
 
             infos[i]["rewards"]["rew_quadcol"] = rew_collisions[i]
             infos[i]["rewards"]["rew_proximity"] = rew_proximity[i]
+            infos[i]["rewards"]["rew_room_floor"] = rew_room_floor[i]
+            infos[i]["rewards"]["rew_room_wall"] = rew_room_wall[i]
+            infos[i]["rewards"]["rew_room_ceiling"] = rew_room_ceiling[i]
+            infos[i]["rewards"]["rew_survival"] = rew_survival[i]
             infos[i]["rewards"]["rewraw_quadcol"] = rew_collisions_raw[i]
+            infos[i]["rewards"]["rewraw_room_floor"] = rew_room_floor_raw[i]
+            infos[i]["rewards"]["rewraw_room_wall"] = rew_room_wall_raw[i]
+            infos[i]["rewards"]["rewraw_room_ceiling"] = rew_room_ceiling_raw[i]
 
             if self.use_obstacles:
                 rewards[i] += rew_collisions_obst_quad[i]

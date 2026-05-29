@@ -12,7 +12,7 @@ OBSTACLE_MODEL_CLI = QUAD_BASELINE_CLI_8 + (
     '--quads_neighbor_visible_num=6 --quads_neighbor_obs_type=pos_vel --quads_encoder_type=attention '
     '--with_wandb=True --wandb_project=Quad-Swarm-RL --wandb_user=multi-drones '
     '--quads_domain_random=True --quads_obst_density_random=True --quads_obst_density_min=0.05 '
-    '--quads_obst_density_max=0.2 --quads_obst_size_random=True --quads_obst_size_min=0.3 --quads_obst_size_max=0.6 '
+    '--quads_obst_density_max=0.2 --quads_obst_size_random=True --quads_obst_size_min=0.3 --quads_obst_size_max=0.5 '
     '--wandb_group=obst_domain_random'
 )
 

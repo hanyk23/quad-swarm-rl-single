@@ -53,8 +53,10 @@ def compute_reward_weighted(dynamics, goal, action, dt, time_remain, rew_coeff, 
     cost_spin_raw = (dynamics.omega[0] ** 2 + dynamics.omega[1] ** 2 + dynamics.omega[2] ** 2) ** 0.5
     cost_spin = rew_coeff["spin"] * cost_spin_raw
 
-    # Velocity penalty to slow down aggressive flight
-    cost_vel_raw = np.linalg.norm(dynamics.vel)
+    # Penalize only excessive speed so the policy can still move, but not sprint through waypoints.
+    vel_norm = np.linalg.norm(dynamics.vel)
+    vel_limit = rew_coeff.get("vel_limit", 3.0)
+    cost_vel_raw = max(0.0, vel_norm - vel_limit) ** 2
     cost_vel = rew_coeff.get("vel", 0.0) * cost_vel_raw
 
     # Low altitude penalty to keep the quad higher above the ground
@@ -64,6 +66,8 @@ def compute_reward_weighted(dynamics, goal, action, dt, time_remain, rew_coeff, 
     # Loss crash for staying on the floor
     cost_crash_raw = float(on_floor)
     cost_crash = rew_coeff["crash"] * cost_crash_raw
+    floor_stall_raw = float(on_floor)
+    floor_stall_cost = rew_coeff.get("floor_stall", 0.0) * floor_stall_raw
 
     # Stability bonus: keep target altitude and low angular velocity
     stable_z_raw = max(0.0, 0.25 - abs(dynamics.pos[2] - 1.5))
@@ -71,18 +75,41 @@ def compute_reward_weighted(dynamics, goal, action, dt, time_remain, rew_coeff, 
     stable_z_bonus = rew_coeff.get("stable_z", 0.0) * stable_z_raw
     stable_spin_bonus = rew_coeff.get("stable_spin", 0.0) * stable_spin_raw
 
+    # Progress reward: moving towards the goal
+    # Vector from quad to goal
+    vec_to_goal = goal - dynamics.pos
+    dist_to_goal = np.linalg.norm(vec_to_goal)
+    if dist_to_goal > 0.01:
+        dir_to_goal = vec_to_goal / dist_to_goal
+    else:
+        dir_to_goal = np.zeros(3)
+    
+    # Projection of velocity onto the direction towards the goal
+    progress_raw = np.dot(dynamics.vel, dir_to_goal)
+    progress_bonus = rew_coeff.get("progress", 0.5) * progress_raw
+
+    # Success reward: reaching the goal while still airborne
+    success_raw = 1.0 if (dist_to_goal < 0.7 and not on_floor) else 0.0
+    success_bonus = rew_coeff.get("success", 10.0) * success_raw
+
+    if on_floor:
+        progress_bonus = 0.0
+        stable_z_bonus = 0.0
+        stable_spin_bonus = 0.0
+
     reward = -dt * np.sum([
         cost_pos,
         cost_effort,
         cost_crash,
+        floor_stall_cost,
         cost_orient,
         cost_spin,
         cost_vel,
         cost_z,
-    ]) + dt * (stable_z_bonus + stable_spin_bonus)
+    ]) + dt * (stable_z_bonus + stable_spin_bonus + progress_bonus) + success_bonus
 
     rew_info = {
-        "rew_main": -cost_pos + stable_z_bonus + stable_spin_bonus,
+        "rew_main": -cost_pos + stable_z_bonus + stable_spin_bonus + progress_bonus + (success_bonus / dt),
         'rew_pos': -cost_pos,
         'rew_action': -cost_effort,
         'rew_crash': -cost_crash,
@@ -92,6 +119,9 @@ def compute_reward_weighted(dynamics, goal, action, dt, time_remain, rew_coeff, 
         "rew_z": -cost_z,
         "rew_stable_z": stable_z_bonus,
         "rew_stable_spin": stable_spin_bonus,
+        "rew_progress": progress_bonus,
+        "rew_success": success_bonus / dt,
+        "rew_floor_stall": -floor_stall_cost,
 
         "rewraw_main": -cost_pos_raw,
         'rewraw_pos': -cost_pos_raw,
@@ -103,6 +133,9 @@ def compute_reward_weighted(dynamics, goal, action, dt, time_remain, rew_coeff, 
         "rewraw_z": -cost_z_raw,
         "rewraw_stable_z": stable_z_raw,
         "rewraw_stable_spin": stable_spin_raw,
+        "rewraw_progress": progress_raw,
+        "rewraw_success": success_raw,
+        "rewraw_floor_stall": -floor_stall_raw,
     }
 
     for k, v in rew_info.items():
@@ -126,7 +159,8 @@ class QuadrotorSingle:
                  sim_steps=2, obs_repr="xyz_vxyz_R_omega", ep_time=7, room_dims=(10.0, 10.0, 10.0),
                  init_random_state=False, sense_noise=None, verbose=False, gravity=GRAV,
                  t2w_std=0.005, t2t_std=0.0005, excite=False, dynamics_simplification=False, use_numba=False,
-                 neighbor_obs_type='none', num_agents=1, num_use_neighbor_obs=0, use_obstacles=False):
+                 neighbor_obs_type='none', num_agents=1, num_use_neighbor_obs=0, use_obstacles=False,
+                 control_type='velocity_yaw', velocity_yaw_max_speed=3.0):
         np.seterr(under='ignore')
         """
         Args:
@@ -187,6 +221,8 @@ class QuadrotorSingle:
         # Self dynamics
         self.dim_mode = dim_mode
         self.raw_control_zero_middle = raw_control_zero_middle
+        self.control_type = control_type
+        self.velocity_yaw_max_speed = velocity_yaw_max_speed
         self.tf_control = tf_control
         self.dynamics_randomize_every = dynamics_randomize_every
         self.verbose = verbose
@@ -281,7 +317,9 @@ class QuadrotorSingle:
                                           use_numba=self.use_numba, dt=self.dt)
 
         # CONTROL
-        if self.raw_control:
+        if self.control_type == 'velocity_yaw':
+            self.controller = VelocityYawControl(self.dynamics, max_speed=self.velocity_yaw_max_speed)
+        elif self.raw_control:
             if self.dim_mode == '1D':  # Z axis only
                 self.controller = VerticalControl(self.dynamics, zero_action_middle=self.raw_control_zero_middle)
             elif self.dim_mode == '2D':  # X and Z axes only

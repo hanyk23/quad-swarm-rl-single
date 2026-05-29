@@ -202,18 +202,24 @@ class OmegaThrustControl(object):
 
 # TODO: this has not been tested well yet.
 class VelocityYawControl(object):
-    def __init__(self, dynamics):
+    def __init__(self, dynamics, max_speed=3.0):
         jacobian = quadrotor_jacobian(dynamics)
         self.Jinv = np.linalg.inv(jacobian)
+        self.action = None
+        self.max_speed = max_speed
+        self.step_func = self.step
 
     def action_space(self, dynamics):
-        vmax = 20.0  # meters / sec
+        vmax = self.max_speed  # meters / sec
         dymax = 4 * np.pi  # radians / sec
         high = np.array([vmax, vmax, vmax, dymax])
         return spaces.Box(-high, high, dtype=np.float32)
 
     # @profile
-    def step(self, dynamics, action, dt):
+    def step(self, dynamics, action, goal=None, dt=0.0, observation=None):
+        vmax = self.max_speed  # meters / sec
+        action = np.clip(action, a_min=np.array([-vmax, -vmax, -vmax, -4 * np.pi]),
+                         a_max=np.array([vmax, vmax, vmax, 4 * np.pi]))
         # needs to be much bigger than in normal controller
         # so the random initial actions in RL create some signal
         kp_v = 5.0
@@ -239,13 +245,13 @@ class VelocityYawControl(object):
 
         dw_des = -kp_a * e_R - kd_a * e_w
         # we want this acceleration, but we can only accelerate in one direction!
-        # thrust_mag = np.dot(acc_des, dynamics.rot[:,2])
-        thrust_mag = get_blas_funcs("thrust_mag", [acc_des, dynamics.rot[:, 2]])
+        thrust_mag = np.dot(acc_des, dynamics.rot[:, 2])
 
         des = np.append(thrust_mag, dw_des)
         thrusts = np.matmul(self.Jinv, des)
         thrusts = np.clip(thrusts, a_min=0.0, a_max=1.0)
         dynamics.step(thrusts, dt)
+        self.action = np.array(action).copy()
 
 
 # this is an "oracle" policy to drive the quadrotor towards a goal

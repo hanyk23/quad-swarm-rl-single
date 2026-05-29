@@ -49,16 +49,40 @@ def add_quadrotors_env_args(env, parser):
                    help='The falloff radius for the smooth penalty. -1.0: no smooth penalty')
     p.add_argument('--quads_collision_smooth_max_penalty', default=10.0, type=float,
                    help='The upper bound of the collision function given distance among drones')
+    p.add_argument('--quads_orient_reward', default=1.0, type=float, help='Reward weight for orientation stability')
+    p.add_argument('--quads_spin_reward', default=0.1, type=float, help='Reward weight for angular velocity penalty')
+    p.add_argument('--quads_vel_reward', default=0.0, type=float, help='Reward weight for high-speed penalty')
+    p.add_argument('--quads_vel_penalty_limit', default=3.0, type=float,
+                   help='Only penalize linear speed above this limit')
+    p.add_argument('--quads_velocity_yaw_max_speed', default=3.0, type=float,
+                   help='Maximum linear speed command for velocity_yaw control')
+    p.add_argument('--quads_progress_reward', default=2.0, type=float,
+                   help='Reward weight for moving toward the current goal')
+    p.add_argument('--quads_success_reward', default=10.0, type=float,
+                   help='One-step reward for reaching the current goal')
+    p.add_argument('--quads_first_success_reward', default=10.0, type=float,
+                   help='One-step reward for reaching the first goal in an episode')
+    p.add_argument('--quads_z_reward', default=0.0, type=float, help='Reward weight for low-altitude penalty')
+    p.add_argument('--quads_stable_z_reward', default=0.0, type=float, help='Reward weight for stable altitude bonus')
+    p.add_argument('--quads_stable_spin_reward', default=0.0, type=float, help='Reward weight for stable spin bonus')
+    p.add_argument('--quads_room_floor_reward', default=0.0, type=float, help='Penalty for hitting the floor boundary')
+    p.add_argument('--quads_room_wall_reward', default=0.0, type=float, help='Penalty for hitting a side wall boundary')
+    p.add_argument('--quads_room_ceiling_reward', default=0.0, type=float, help='Penalty for hitting the ceiling boundary')
+    p.add_argument('--quads_control_type', default='velocity_yaw', type=str,
+                   choices=['velocity_yaw', 'raw_motor', 'position'],
+                   help='Low-level control interface used by the environment')
 
     # Obstacle
     # # Obstacle Features
     p.add_argument('--quads_use_obstacles', default=False, type=str2bool, help='Use obstacles or not')
     p.add_argument('--quads_obstacle_obs_type', default='none', type=str,
-                   choices=['none', 'octomap'], help='Choose what kind of obs to send to encoder.')
+                   choices=['none', 'octomap', 'lidar'], help='Choose what kind of obs to send to encoder.')
     p.add_argument('--quads_obst_density', default=0.2, type=float, help='Obstacle density in the map')
     p.add_argument('--quads_obst_size', default=1.0, type=float, help='The radius of obstacles')
     p.add_argument('--quads_obst_spawn_area', nargs='+', default=[6.0, 6.0], type=float,
                    help='The spawning area of obstacles')
+    p.add_argument('--quads_obstacle_scan_resolution', default=0.1, type=float,
+                   help='Resolution used for obstacle SDF samples around the quad')
     p.add_argument('--quads_domain_random', default=False, type=str2bool, help='Use domain randomization or not')
     p.add_argument('--quads_obst_density_random', default=False, type=str2bool, help='Enable obstacle density randomization or not')
     p.add_argument('--quads_obst_density_min', default=0.05, type=float,
@@ -68,7 +92,7 @@ def add_quadrotors_env_args(env, parser):
     p.add_argument('--quads_obst_size_random', default=False, type=str2bool, help='Enable obstacle size randomization or not')
     p.add_argument('--quads_obst_size_min', default=0.3, type=float,
                    help='The minimum obstacle size when enabling domain randomization')
-    p.add_argument('--quads_obst_size_max', default=0.6, type=float,
+    p.add_argument('--quads_obst_size_max', default=0.5, type=float,
                    help='The maximum obstacle size when enabling domain randomization')
 
     # # Obstacle Encoder
@@ -79,6 +103,12 @@ def add_quadrotors_env_args(env, parser):
     p.add_argument('--quads_obst_collision_reward', default=0.0, type=float,
                    help='Override default value for quadcol_bin_obst reward, which means collisions between quadrotor '
                         'and obstacles')
+    p.add_argument('--quads_floor_stall_reward', default=0.0, type=float,
+                   help='Penalty applied when the quad stays on the floor')
+    p.add_argument('--visualize_projection_map', default=False, type=str2bool,
+                   help='Show a 2D projection map during evaluation')
+    p.add_argument('--visualize_obstacle_point_cloud', default=False, type=str2bool,
+                   help='Show nearby obstacle and wall point samples on the 2D projection map')
 
     # Aerodynamics
     # # Downwash

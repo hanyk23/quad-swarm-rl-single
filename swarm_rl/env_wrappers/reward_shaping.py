@@ -6,8 +6,8 @@ from sample_factory.envs.env_utils import TrainingInfoInterface, RewardShapingIn
 
 DEFAULT_QUAD_REWARD_SHAPING_SINGLE = dict(
     quad_rewards=dict(
-        pos=3.5, effort=0.15, spin=0.4, vel=0.1, crash=1.0, orient=0.5, yaw=0.0, rot=0.0, attitude=0.05, z=0.2,
-        stable_z=0.15, stable_spin=0.08
+        pos=0.1, effort=0.05, spin=0.1, vel=0.0, crash=1.0, orient=0.1, yaw=0.0, rot=0.0, attitude=0.05, z=0.1,
+        vel_limit=3.0, stable_z=0.05, stable_spin=0.05, progress=2.0, success=10.0, first_success=10.0
     ),
 )
 
@@ -45,6 +45,12 @@ class QuadsRewardShapingWrapper(gym.Wrapper, TrainingInfoInterface, RewardShapin
         self.reward_shaping_updated = True
 
     def reset(self):
+        if self.reward_shaping_updated:
+            env_reward_shaping = self.env.unwrapped.rew_coeff
+            for key, weight in self.reward_shaping_scheme['quad_rewards'].items():
+                env_reward_shaping[key] = weight
+            self.reward_shaping_updated = False
+
         obs = self.env.reset()
         self.cumulative_rewards = [dict() for _ in range(self.num_agents)]
         self.episode_actions = []
@@ -84,11 +90,18 @@ class QuadsRewardShapingWrapper(gym.Wrapper, TrainingInfoInterface, RewardShapin
                     true_reward += 1000 * self.cumulative_rewards[i].get('rewraw_quadcol', 0)
 
                 info['true_reward'] = true_reward
+                # Keep best-model selection tied to task progress rather than the newest shaping terms.
+                # The large scale factor makes this metric comparable across resuming runs even if the
+                # checkpoint we resume from was saved under a different reward scale.
+                true_objective = 1000.0 * self.cumulative_rewards[i].get('rewraw_success', 0.0) + \
+                                 self.cumulative_rewards[i].get('rewraw_main', 0.0)
+                info['true_objective'] = true_objective
                 self.cumulative_rewards[i]['rewraw_main'] = true_reward
                 if 'episode_extra_stats' not in info:
                     info['episode_extra_stats'] = dict()
                 extra_stats = info['episode_extra_stats']
                 extra_stats.update(self.cumulative_rewards[i])
+                extra_stats['true_objective'] = true_objective
 
                 approx_total_training_steps = self.training_info.get('approx_total_training_steps', 0)
                 extra_stats['z_approx_total_training_steps'] = approx_total_training_steps
