@@ -119,7 +119,7 @@ class Quadrotor3DSceneMulti:
             quad_arm=None, models=None, walls_visible=True, resizable=True, goal_diameter=None,
             viewpoint='chase', obs_hw=None, room_dims=(10, 10, 10), num_agents=8, obstacles=None,
             render_speed=1.0, formation_size=-1.0, vis_vel_arrows=True, vis_acc_arrows=True, viz_traces=100, viz_trace_nth_step=1,
-            num_obstacles=0, scene_index=0
+            num_obstacles=0, scene_index=0, camera_fov_deg=90.0, camera_pitch_deg=25.0, camera_drone_index=0
     ):
         self.pygl_window = __import__('pyglet.window', fromlist=['key'])
         self.keys = None  # keypress handler, initialized later
@@ -134,6 +134,8 @@ class Quadrotor3DSceneMulti:
         self.obs_hw = copy.deepcopy(obs_hw)
         self.walls_visible = walls_visible
         self.scene_index = scene_index
+        self.camera_fov_deg = float(camera_fov_deg)
+        self.camera_pitch_deg = float(camera_pitch_deg)
 
         self.quad_arm = quad_arm
         self.models = models
@@ -159,6 +161,8 @@ class Quadrotor3DSceneMulti:
             self.chase_cam = TopDownCamera(view_dist=2.5)
         elif self.viewpoint == 'topdownfollow':
             self.chase_cam = TopDownFollowCamera(view_dist=2.5)
+        elif self.viewpoint == 'fpv':
+            self.chase_cam = ChaseCamera(view_dist=self.diameter * 15)
         elif self.viewpoint[:-1] == 'corner':
             self.chase_cam = CornerCamera(view_dist=4.0, room_dims=self.room_dims, corner_index=int(self.viewpoint[-1]))
 
@@ -177,7 +181,7 @@ class Quadrotor3DSceneMulti:
         self.goals = None
         self.dynamics = None
         self.num_agents = num_agents
-        self.camera_drone_index = 0
+        self.camera_drone_index = min(int(camera_drone_index), self.num_agents - 1)
 
         # Aux camera moving
         standard_render_speed = 1.0
@@ -213,7 +217,7 @@ class Quadrotor3DSceneMulti:
     def _make_scene(self):
         import gym_art.quadrotor_multi.rendering3d as r3d
 
-        self.cam1p = r3d.Camera(fov=90.0)
+        self.cam1p = r3d.Camera(fov=self.camera_fov_deg)
         self.cam3p = r3d.Camera(fov=45.0)
 
         self.quad_transforms, self.shadow_transforms, self.goal_transforms, self.collision_transforms = [], [], [], []
@@ -304,14 +308,21 @@ class Quadrotor3DSceneMulti:
             color = OBST_COLOR_3
             obst_height = self.room_dims[2]
             obstacle_transform = r3d.transform_and_color(np.eye(4), color, r3d.cylinder(
-                radius=self.obstacles.size / 2.0, height=obst_height, sections=64))
+                radius=self.obstacles.size / 2.0, height=obst_height, sections=20))
 
             self.obstacle_transforms.append(obstacle_transform)
 
     def update_obstacles(self, obstacles):
         import gym_art.quadrotor_multi.rendering3d as r3d
 
-        if len(obstacles.pos_arr) == 1:
+        if obstacles is None:
+            return
+        if len(obstacles.pos_arr) == 0:
+            return
+
+        if len(self.obstacle_transforms) != len(obstacles.pos_arr):
+            self.obstacles = obstacles
+            self._make_scene()
             return
 
         for i, g in enumerate(obstacles.pos_arr):
@@ -374,13 +385,13 @@ class Quadrotor3DSceneMulti:
         import gym_art.quadrotor_multi.rendering3d as r3d
 
         if self.scene:
+            self.fpv_lookat = all_dynamics[self.camera_drone_index].look_at(degrees_down=self.camera_pitch_deg)
             if self.viewpoint == 'global' or self.viewpoint[:-1] == 'corner' or self.viewpoint == 'topdown':
                 goal = np.mean(goals, axis=0)
                 self.chase_cam.step(center=goal)
             else:
                 self.chase_cam.step(all_dynamics[self.camera_drone_index].pos,
                                     all_dynamics[self.camera_drone_index].vel)
-                self.fpv_lookat = all_dynamics[self.camera_drone_index].look_at()
             # use this to get trails on the goals and visualize the paths they follow
             # bodies = []
             # bodies.extend(self.goal_transforms)
@@ -504,17 +515,37 @@ class Quadrotor3DSceneMulti:
 
             self.window_smooth_change_view()
             self.update_state(all_dynamics=all_dynamics, goals=goals, obstacles=obstacles, collisions=collisions)
-            self.cam3p.look_at(*self.chase_cam.look_at())
-            r3d.draw(self.scene, self.cam3p, self.window_target)
+            if self.viewpoint == 'fpv':
+                self.cam1p.look_at(*self.fpv_lookat)
+                r3d.draw(self.scene, self.cam1p, self.window_target)
+            else:
+                self.cam3p.look_at(*self.chase_cam.look_at())
+                r3d.draw(self.scene, self.cam3p, self.window_target)
             return None, first_spawn
         elif mode == 'rgb_array':
             if self.video_target is None:
                 self.video_target = r3d.FBOTarget(self.window_h, self.window_h)
                 self._make_scene()
             self.update_state(all_dynamics=all_dynamics, goals=goals, obstacles=obstacles, collisions=collisions)
-            self.cam3p.look_at(*self.chase_cam.look_at())
-            r3d.draw(self.scene, self.cam3p, self.video_target)
+            if self.viewpoint == 'fpv':
+                self.cam1p.look_at(*self.fpv_lookat)
+                r3d.draw(self.scene, self.cam1p, self.video_target)
+            else:
+                self.cam3p.look_at(*self.chase_cam.look_at())
+                r3d.draw(self.scene, self.cam3p, self.video_target)
             return np.flipud(self.video_target.read()), None
+
+    def render_obs(self, all_dynamics, goals, collisions, obstacles=None):
+        import gym_art.quadrotor_multi.rendering3d as r3d
+
+        if self.obs_target is None:
+            self.obs_target = r3d.FBOTarget(self.obs_hw[0], self.obs_hw[1])
+            self._make_scene()
+
+        self.update_state(all_dynamics=all_dynamics, goals=goals, obstacles=obstacles, collisions=collisions)
+        self.cam1p.look_at(*self.fpv_lookat)
+        r3d.draw(self.scene, self.cam1p, self.obs_target)
+        return np.flipud(self.obs_target.read())
 
     def window_smooth_change_view(self):
         if len(self.keys) == 0:
@@ -535,6 +566,12 @@ class Quadrotor3DSceneMulti:
             self.viewpoint = 'local'
             self.chase_cam = ChaseCamera(view_dist=self.diameter * 15)
             self.chase_cam.reset(self.goals[0][0:3], self.dynamics[0].pos, self.dynamics[0].vel)
+            return
+        if self.keys[key.F]:
+            self.viewpoint = 'fpv'
+            self.chase_cam = ChaseCamera(view_dist=self.diameter * 15)
+            self.chase_cam.reset(self.goals[self.camera_drone_index][0:3], self.dynamics[self.camera_drone_index].pos,
+                                 self.dynamics[self.camera_drone_index].vel)
             return
         if self.keys[key.G]:
             self.viewpoint = 'global'

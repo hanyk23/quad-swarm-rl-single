@@ -32,6 +32,10 @@ class Scenario_o_random(Scenario_o_base):
 
         obst_map_locs = np.where(self.obstacle_map == 0)
         self.free_space = list(zip(*obst_map_locs))
+        self.wall_safe_margin = self._wall_safe_margin_value()
+        self.wall_safe_free_space = self._filter_wall_safe_free_space()
+        if len(self.wall_safe_free_space) == 0:
+            self.wall_safe_free_space = list(self.free_space)
 
         self.start_point = []
         self.end_point = []
@@ -44,7 +48,7 @@ class Scenario_o_random(Scenario_o_base):
         # self.start_point = self.generate_pos_obst_map_2(self.num_agents)
         # self.end_point = self.generate_pos_obst_map_2(self.num_agents)
 
-        self.duration_step = int(np.random.uniform(low=2.0, high=4.0) * self.envs[0].control_freq)
+        self.duration_step = int(np.random.uniform(low=4.0, high=6.0) * self.envs[0].control_freq)
         self.update_formation_and_relate_param()
 
         self.formation_center = np.array((0., 0., 2.))

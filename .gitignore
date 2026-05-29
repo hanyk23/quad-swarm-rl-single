@@ -13,4 +13,5 @@ _results
 *.cprof
 *.egg-info/
 train_dir/
+train_dir_velocity_nav/
 wandb/

@@ -23,6 +23,7 @@ from gymnasium.utils import seeding
 
 import gym_art.quadrotor_multi.get_state as get_state
 import gym_art.quadrotor_multi.quadrotor_randomization as quad_rand
+from gym_art.quadrotor_multi.quad_utils import QUADS_OBSTACLE_OBS_TYPE
 from gym_art.quadrotor_multi.quadrotor_control import *
 from gym_art.quadrotor_multi.quadrotor_dynamics import QuadrotorDynamics
 from gym_art.quadrotor_multi.sensor_noise import SensorNoise
@@ -31,7 +32,18 @@ GRAV = 9.81  # default gravitational constant
 
 
 # reasonable reward function for hovering at a goal and not flying too high
-def compute_reward_weighted(dynamics, goal, action, dt, time_remain, rew_coeff, action_prev, on_floor=False):
+def compute_reward_weighted(
+    dynamics,
+    goal,
+    action,
+    dt,
+    time_remain,
+    rew_coeff,
+    action_prev,
+    prev_goal_dist=None,
+    on_floor=False,
+    speed_limit_xy=None,
+):
     # Distance to the goal
     dist = np.linalg.norm(goal - dynamics.pos)
     cost_pos_raw = dist
@@ -57,28 +69,112 @@ def compute_reward_weighted(dynamics, goal, action, dt, time_remain, rew_coeff, 
     cost_crash_raw = float(on_floor)
     cost_crash = rew_coeff["crash"] * cost_crash_raw
 
-    reward = -dt * np.sum([
+    # Penalize aggressive command changes.
+    cost_action_change_raw = np.linalg.norm(action - action_prev)
+    cost_action_change = rew_coeff["action_change"] * cost_action_change_raw
+
+    # Penalize large vertical motion to avoid repeated punch-up maneuvers.
+    cost_vz_raw = abs(dynamics.vel[2])
+    cost_vz = rew_coeff["vz"] * cost_vz_raw
+
+    # Keep cruise altitude close to the active target altitude for smoother horizontal flight.
+    cost_height_error_raw = abs(goal[2] - dynamics.pos[2])
+    cost_height_error = rew_coeff["height_error"] * cost_height_error_raw
+
+    # Penalize high average motor usage even in velocity-control mode.
+    cost_thrust_raw = float(np.mean(dynamics.thrust_cmds_damp))
+    cost_thrust = rew_coeff["thrust"] * cost_thrust_raw
+
+    # Penalize standing still while still far away from the objective.
+    speed = np.linalg.norm(dynamics.vel)
+    cost_stagnation_raw = 0.0
+    if dist > 0.75 and not on_floor:
+        cost_stagnation_raw = max(0.0, 0.15 - speed)
+    cost_stagnation = rew_coeff["stagnation"] * cost_stagnation_raw
+
+    # Discourage dynamics overshoot beyond the horizontal velocity command envelope.
+    speed_xy = np.linalg.norm(dynamics.vel[:2])
+    cost_overspeed_raw = 0.0
+    if speed_limit_xy is not None and speed_limit_xy > EPS:
+        overspeed_ratio = max(0.0, speed_xy / speed_limit_xy - 1.0)
+        cost_overspeed_raw = overspeed_ratio * overspeed_ratio
+    cost_overspeed = rew_coeff["overspeed"] * cost_overspeed_raw
+
+    # Dense progress reward. Dividing by dt keeps the final contribution in meters per step
+    # after the common dt scaling below.
+    reward_progress_raw = 0.0
+    if prev_goal_dist is not None:
+        reward_progress_raw = (prev_goal_dist - dist) / max(dt, EPS)
+    reward_progress = rew_coeff["progress"] * reward_progress_raw
+
+    reward = dt * np.sum([
+        reward_progress,
+    ]) - dt * np.sum([
         cost_pos,
         cost_effort,
         cost_crash,
         cost_orient,
         cost_spin,
+        cost_action_change,
+        cost_vz,
+        cost_height_error,
+        cost_thrust,
+        cost_stagnation,
+        cost_overspeed,
     ])
 
     rew_info = {
-        "rew_main": -cost_pos,
+        "rew_main": reward_progress - np.sum([
+            cost_pos,
+            cost_effort,
+            cost_crash,
+            cost_orient,
+            cost_spin,
+            cost_action_change,
+            cost_vz,
+            cost_height_error,
+            cost_thrust,
+            cost_stagnation,
+            cost_overspeed,
+        ]),
         'rew_pos': -cost_pos,
         'rew_action': -cost_effort,
         'rew_crash': -cost_crash,
         "rew_orient": -cost_orient,
         "rew_spin": -cost_spin,
+        "rew_action_change": -cost_action_change,
+        "rew_vz": -cost_vz,
+        "rew_height_error": -cost_height_error,
+        "rew_thrust": -cost_thrust,
+        "rew_stagnation": -cost_stagnation,
+        "rew_overspeed": -cost_overspeed,
+        "rew_progress": reward_progress,
 
-        "rewraw_main": -cost_pos_raw,
+        "rewraw_main": reward_progress - np.sum([
+            cost_pos,
+            cost_effort,
+            cost_crash,
+            cost_orient,
+            cost_spin,
+            cost_action_change,
+            cost_vz,
+            cost_height_error,
+            cost_thrust,
+            cost_stagnation,
+            cost_overspeed,
+        ]),
         'rewraw_pos': -cost_pos_raw,
         'rewraw_action': -cost_effort_raw,
         'rewraw_crash': -cost_crash_raw,
         "rewraw_orient": -cost_orient_raw,
         "rewraw_spin": -cost_spin_raw,
+        "rewraw_action_change": -cost_action_change_raw,
+        "rewraw_vz": -cost_vz_raw,
+        "rewraw_height_error": -cost_height_error_raw,
+        "rewraw_thrust": -cost_thrust_raw,
+        "rewraw_stagnation": -cost_stagnation_raw,
+        "rewraw_overspeed": -cost_overspeed_raw,
+        "rewraw_progress": reward_progress_raw,
     }
 
     for k, v in rew_info.items():
@@ -102,7 +198,16 @@ class QuadrotorSingle:
                  sim_steps=2, obs_repr="xyz_vxyz_R_omega", ep_time=7, room_dims=(10.0, 10.0, 10.0),
                  init_random_state=False, sense_noise=None, verbose=False, gravity=GRAV,
                  t2w_std=0.005, t2t_std=0.0005, excite=False, dynamics_simplification=False, use_numba=False,
-                 neighbor_obs_type='none', num_agents=1, num_use_neighbor_obs=0, use_obstacles=False):
+                 neighbor_obs_type='none', num_agents=1, num_use_neighbor_obs=0, use_obstacles=False,
+                 obstacle_obs_type='octomap', lidar_num_rays=9, control_mode='raw', velocity_max_xy=2.0,
+                 velocity_max_z=1.0, goal_z_range=(1.0, 3.0),
+                 velocity_max_tilt_deg=35.0, velocity_max_acc_xy=6.0,
+                 velocity_max_acc_z_up=4.0, velocity_max_acc_z_down=4.0,
+                 velocity_yaw_mode='keep', velocity_yaw_min_speed=0.15,
+                 velocity_yaw_rate_max=0.0, velocity_yaw_control_scale=1.0,
+                 velocity_command_smoothing_tau=0.0,
+                 velocity_attitude_max_angle_deg=45.0,
+                 velocity_attitude_blend=1.0):
         np.seterr(under='ignore')
         """
         Args:
@@ -167,6 +272,20 @@ class QuadrotorSingle:
         self.dynamics_randomize_every = dynamics_randomize_every
         self.verbose = verbose
         self.raw_control = raw_control
+        self.control_mode = control_mode
+        self.velocity_max_xy = velocity_max_xy
+        self.velocity_max_z = velocity_max_z
+        self.velocity_max_tilt_deg = velocity_max_tilt_deg
+        self.velocity_max_acc_xy = velocity_max_acc_xy
+        self.velocity_max_acc_z_up = velocity_max_acc_z_up
+        self.velocity_max_acc_z_down = velocity_max_acc_z_down
+        self.velocity_yaw_mode = velocity_yaw_mode
+        self.velocity_yaw_min_speed = velocity_yaw_min_speed
+        self.velocity_yaw_rate_max = velocity_yaw_rate_max
+        self.velocity_yaw_control_scale = velocity_yaw_control_scale
+        self.velocity_command_smoothing_tau = velocity_command_smoothing_tau
+        self.velocity_attitude_max_angle_deg = velocity_attitude_max_angle_deg
+        self.velocity_attitude_blend = velocity_attitude_blend
         self.gravity = gravity
         self.update_sense_noise(sense_noise=sense_noise)
         self.t2w_std = t2w_std
@@ -180,6 +299,7 @@ class QuadrotorSingle:
         self.dynamics_simplification = dynamics_simplification
         self.max_init_vel = 1.  # m/s
         self.max_init_omega = 2 * np.pi  # rad/s
+        self.goal_z_range = tuple(goal_z_range)
 
         # DYNAMICS (and randomization)
         # Could be dynamics of a specific quad or a random dynamics (i.e. randomquad)
@@ -227,6 +347,8 @@ class QuadrotorSingle:
 
         # Obstacles info
         self.use_obstacles = use_obstacles
+        self.obstacle_obs_type = obstacle_obs_type
+        self.lidar_num_rays = max(1, int(lidar_num_rays))
 
         # Make observation space
         self.observation_space = self.make_observation_space()
@@ -257,7 +379,48 @@ class QuadrotorSingle:
                                           use_numba=self.use_numba, dt=self.dt)
 
         # CONTROL
-        if self.raw_control:
+        if self.control_mode == 'velocity':
+            self.controller = VelocityControl(
+                self.dynamics,
+                max_speed_xy=self.velocity_max_xy,
+                max_speed_z=self.velocity_max_z,
+                max_tilt_deg=self.velocity_max_tilt_deg,
+                max_acc_xy=self.velocity_max_acc_xy,
+                max_acc_z_up=self.velocity_max_acc_z_up,
+                max_acc_z_down=self.velocity_max_acc_z_down,
+                yaw_mode=self.velocity_yaw_mode,
+                yaw_min_speed=self.velocity_yaw_min_speed,
+                yaw_rate_max=self.velocity_yaw_rate_max,
+                yaw_control_scale=self.velocity_yaw_control_scale,
+                command_smoothing_tau=self.velocity_command_smoothing_tau,
+            )
+        elif self.control_mode == 'velocity_yaw':
+            self.controller = BodyVelocityYawControl(
+                self.dynamics,
+                max_speed_xy=self.velocity_max_xy,
+                max_speed_z=self.velocity_max_z,
+                max_tilt_deg=self.velocity_max_tilt_deg,
+                max_acc_xy=self.velocity_max_acc_xy,
+                max_acc_z_up=self.velocity_max_acc_z_up,
+                max_acc_z_down=self.velocity_max_acc_z_down,
+                max_yaw_rate=self.velocity_yaw_rate_max,
+                yaw_control_scale=self.velocity_yaw_control_scale,
+                command_smoothing_tau=self.velocity_command_smoothing_tau,
+            )
+        elif self.control_mode == 'velocity_attitude':
+            self.controller = VelocityAttitudeControl(
+                self.dynamics,
+                max_speed_xy=self.velocity_max_xy,
+                max_speed_z=self.velocity_max_z,
+                max_angle_deg=self.velocity_attitude_max_angle_deg,
+                max_tilt_deg=self.velocity_max_tilt_deg,
+                max_acc_xy=self.velocity_max_acc_xy,
+                max_acc_z_up=self.velocity_max_acc_z_up,
+                max_acc_z_down=self.velocity_max_acc_z_down,
+                attitude_blend=self.velocity_attitude_blend,
+                command_smoothing_tau=self.velocity_command_smoothing_tau,
+            )
+        elif self.raw_control:
             if self.dim_mode == '1D':  # Z axis only
                 self.controller = VerticalControl(self.dynamics, zero_action_middle=self.raw_control_zero_middle)
             elif self.dim_mode == '2D':  # X and Z axes only
@@ -304,6 +467,9 @@ class QuadrotorSingle:
             "wall": [np.zeros(6), 5.0 * np.ones(6)],
             "floor": [np.zeros(1), self.room_box[1][2] * np.ones(1)],
             "octmap": [-10 * np.ones(9), 10 * np.ones(9)],
+            "depth": [np.zeros(9), 10.0 * np.ones(9)],
+            "lidar": [np.zeros(self.lidar_num_rays), 10.0 * np.ones(self.lidar_num_rays)],
+            "yolo": [np.zeros(QUADS_OBSTACLE_OBS_TYPE["yolo"]), np.ones(QUADS_OBSTACLE_OBS_TYPE["yolo"])],
         }
         self.obs_comp_names = list(self.obs_space_low_high.keys())
         self.obs_comp_sizes = [self.obs_space_low_high[name][1].size for name in self.obs_comp_names]
@@ -312,8 +478,15 @@ class QuadrotorSingle:
         if self.neighbor_obs_type == 'pos_vel' and self.num_use_neighbor_obs > 0:
             obs_comps = obs_comps + (['rxyz'] + ['rvxyz']) * self.num_use_neighbor_obs
 
-        if self.use_obstacles:
-            obs_comps = obs_comps + ["octmap"]
+        if self.use_obstacles and self.obstacle_obs_type != 'none':
+            if self.obstacle_obs_type == 'octomap':
+                obs_comps = obs_comps + ["octmap"]
+            elif self.obstacle_obs_type in ('depth', 'lidar'):
+                obs_comps = obs_comps + [self.obstacle_obs_type]
+            elif self.obstacle_obs_type == 'yolo':
+                obs_comps = obs_comps + ["yolo"]
+            else:
+                raise NotImplementedError(f"Unsupported obstacle_obs_type: {self.obstacle_obs_type}")
 
         print("Observation components:", obs_comps)
         obs_low, obs_high = [], []
@@ -342,12 +515,14 @@ class QuadrotorSingle:
         self.actions[1] = copy.deepcopy(self.actions[0])
         self.actions[0] = copy.deepcopy(action)
 
+        prev_goal_dist = np.linalg.norm(self.goal - self.dynamics.pos)
         self.controller.step_func(dynamics=self.dynamics, action=action, goal=self.goal, dt=self.dt, observation=None)
 
         self.time_remain = self.ep_len - self.tick
         reward, rew_info = compute_reward_weighted(
             dynamics=self.dynamics, goal=self.goal, action=action, dt=self.dt, time_remain=self.time_remain,
-            rew_coeff=self.rew_coeff, action_prev=self.actions[1], on_floor=self.dynamics.on_floor)
+            rew_coeff=self.rew_coeff, action_prev=self.actions[1], prev_goal_dist=prev_goal_dist,
+            on_floor=self.dynamics.on_floor, speed_limit_xy=self.velocity_max_xy)
 
         self.tick += 1
         done = self.tick > self.ep_len
@@ -428,20 +603,28 @@ class QuadrotorSingle:
             if self.dim_mode == '1D' or self.dim_mode == '2D':
                 rotation = np.eye(3)
             else:
-                # make sure we're sort of pointing towards goal (for mellinger controller)
+                # Start with the onboard camera roughly facing the active target.
                 rotation = randyaw()
-                while np.dot(rotation[:, 0], to_xyhat(-pos)) < 0.5:
+                target_direction = to_xyhat(self.goal - pos) if self.goal is not None else to_xyhat(-pos)
+                if np.linalg.norm(target_direction) < EPS:
+                    target_direction = to_xyhat(-pos)
+                if np.linalg.norm(target_direction) < EPS:
+                    target_direction = np.array([1.0, 0.0, 0.0])
+                while np.dot(rotation[:, 0], target_direction) < 0.5:
                     rotation = randyaw()
 
         self.init_state = [pos, vel, rotation, omega]
         self.dynamics.set_state(pos, vel, rotation, omega)
         self.dynamics.reset()
+        if hasattr(self.controller, "reset"):
+            self.controller.reset(self.dynamics)
         self.dynamics.on_floor = False
         self.dynamics.crashed_floor = self.dynamics.crashed_wall = self.dynamics.crashed_ceiling = False
 
         # Reseting some internal state (counters, etc)
         self.tick = 0
-        self.actions = [np.zeros([4, ]), np.zeros([4, ])]
+        action_dim = self.action_space.shape[0]
+        self.actions = [np.zeros(action_dim), np.zeros(action_dim)]
 
         state = self.state_vector(self)
         return state

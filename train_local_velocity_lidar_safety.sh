@@ -1,0 +1,196 @@
+#!/bin/bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON_BIN="${PYTHON_BIN:-/home/lzh/miniconda3/envs/swarm-rl/bin/python}"
+
+MODE="${1:-train}"
+DEVICE="${DEVICE:-gpu}"
+TRAIN_DIR="${TRAIN_DIR:-$ROOT_DIR/train_dir_velocity_nav}"
+SOURCE_EXPERIMENT="${SOURCE_EXPERIMENT:-single_quad_velocity_nav_depth_v8_free_turn}"
+EXPERIMENT="${EXPERIMENT:-single_quad_velocity_nav_lidar_v9_safe_free}"
+NUM_WORKERS="${NUM_WORKERS:-4}"
+NUM_ENVS_PER_WORKER="${NUM_ENVS_PER_WORKER:-4}"
+TOTAL_STEPS="${TOTAL_STEPS:-20000000}"
+LEARNING_RATE="${LEARNING_RATE:-0.000005}"
+LIDAR_NOISE_STD="${LIDAR_NOISE_STD:-0.0}"
+LIDAR_DROPOUT_PROB="${LIDAR_DROPOUT_PROB:-0.0}"
+VELOCITY_XY_MAX="${VELOCITY_XY_MAX:-1.45}"
+VELOCITY_Z_MAX="${VELOCITY_Z_MAX:-0.35}"
+VELOCITY_MAX_ACC_XY="${VELOCITY_MAX_ACC_XY:-3.2}"
+OBST_DENSITY="${OBST_DENSITY:-0.18}"
+OBST_DENSITY_MIN="${OBST_DENSITY_MIN:-0.12}"
+OBST_DENSITY_MAX="${OBST_DENSITY_MAX:-0.24}"
+OBST_SIZE="${OBST_SIZE:-0.66}"
+OBST_SIZE_MIN="${OBST_SIZE_MIN:-0.54}"
+OBST_SIZE_MAX="${OBST_SIZE_MAX:-0.78}"
+REWARD_SCALE="${REWARD_SCALE:-0.2}"
+OBST_COLLISION_REWARD="${OBST_COLLISION_REWARD:-20.0}"
+OBST_PROXIMITY_REWARD="${OBST_PROXIMITY_REWARD:-1.10}"
+OBST_SAFE_DISTANCE="${OBST_SAFE_DISTANCE:-1.00}"
+OVERSPEED_REWARD="${OVERSPEED_REWARD:-2.0}"
+
+if [[ "$MODE" == "train" ]]; then
+  echo "== Preparing 360-degree lidar safety warm start from $SOURCE_EXPERIMENT =="
+  "$PYTHON_BIN" -m swarm_rl.vision.prepare_depth_warmstart \
+    --source_experiment="$SOURCE_EXPERIMENT" \
+    --target_experiment="$EXPERIMENT" \
+    --source_train_dir="$TRAIN_DIR" \
+    --train_dir="$TRAIN_DIR" \
+    --checkpoint_kind=latest \
+    --target_action_dim=3 \
+    --quads_control_mode=velocity \
+    --quads_obstacle_obs_type=lidar \
+    --reset_optimizer=True \
+    --checkpoint_lr="$LEARNING_RATE" \
+    --quads_depth_noise_std="$LIDAR_NOISE_STD" \
+    --quads_depth_dropout_prob="$LIDAR_DROPOUT_PROB" \
+    --quads_velocity_xy_max="$VELOCITY_XY_MAX" \
+    --quads_velocity_z_max="$VELOCITY_Z_MAX" \
+    --quads_velocity_max_tilt_deg=35.0 \
+    --quads_velocity_max_acc_xy="$VELOCITY_MAX_ACC_XY" \
+    --quads_velocity_max_acc_z_up=1.6 \
+    --quads_velocity_max_acc_z_down=1.6 \
+    --quads_velocity_yaw_mode=keep \
+    --quads_velocity_yaw_min_speed=0.05 \
+    --quads_velocity_yaw_rate_max=0.0 \
+    --quads_velocity_yaw_control_scale=1.0 \
+    --quads_velocity_command_smoothing_tau=0.12 \
+    --quads_obst_density="$OBST_DENSITY" \
+    --quads_obst_density_min="$OBST_DENSITY_MIN" \
+    --quads_obst_density_max="$OBST_DENSITY_MAX" \
+    --quads_obst_size="$OBST_SIZE" \
+    --quads_obst_size_min="$OBST_SIZE_MIN" \
+    --quads_obst_size_max="$OBST_SIZE_MAX" \
+    --reward_scale="$REWARD_SCALE" \
+    --quads_obst_collision_reward="$OBST_COLLISION_REWARD" \
+    --quads_reward_obstacle_proximity="$OBST_PROXIMITY_REWARD" \
+    --quads_obstacle_safe_distance="$OBST_SAFE_DISTANCE" \
+    --quads_reward_progress=3.0 \
+    --quads_reward_action_change=0.06 \
+    --quads_reward_vertical_velocity=0.30 \
+    --quads_reward_height_error=0.25 \
+    --quads_reward_thrust=0.05 \
+    --quads_reward_stagnation=0.08 \
+    --quads_reward_overspeed="$OVERSPEED_REWARD" \
+    --quads_obst_collision_terminate=True \
+    --quads_goal_ball_reward=1.2 \
+    --quads_goal_ball_radius=0.45 \
+    --quads_goal_ball_count=10 \
+    --force=True
+  RESTART_BEHAVIOR="resume"
+elif [[ "$MODE" == "resume" ]]; then
+  RESTART_BEHAVIOR="resume"
+elif [[ "$MODE" == "scratch" ]]; then
+  RESTART_BEHAVIOR="overwrite"
+else
+  echo "Usage: $0 [train|resume|scratch]" >&2
+  exit 1
+fi
+
+echo "== Lidar safety velocity obstacle-avoidance training =="
+
+"$PYTHON_BIN" -m swarm_rl.train \
+  --env=quadrotor_multi \
+  --algo=APPO \
+  --device="$DEVICE" \
+  --experiment="$EXPERIMENT" \
+  --train_dir="$TRAIN_DIR" \
+  --restart_behavior="$RESTART_BEHAVIOR" \
+  --load_checkpoint_kind=latest \
+  --train_for_env_steps="$TOTAL_STEPS" \
+  --use_rnn=False \
+  --recurrence=1 \
+  --num_workers="$NUM_WORKERS" \
+  --num_envs_per_worker="$NUM_ENVS_PER_WORKER" \
+  --learning_rate="$LEARNING_RATE" \
+  --ppo_clip_value=5.0 \
+  --nonlinearity=tanh \
+  --actor_critic_share_weights=False \
+  --policy_initialization=xavier_uniform \
+  --adaptive_stddev=False \
+  --with_vtrace=False \
+  --max_policy_lag=100000000 \
+  --rnn_size=128 \
+  --gae_lambda=1.0 \
+  --max_grad_norm=5.0 \
+  --exploration_loss_coeff=0.0 \
+  --rollout=128 \
+  --batch_size=1024 \
+  --with_pbt=False \
+  --normalize_input=False \
+  --normalize_returns=False \
+  --reward_scale="$REWARD_SCALE" \
+  --reward_clip=20 \
+  --save_every_sec=240 \
+  --keep_checkpoints=2 \
+  --save_milestones_sec=100000000 \
+  --replay_buffer_sample_prob=0.0 \
+  --anneal_collision_steps=0 \
+  --quads_use_numba=True \
+  --quads_render=False \
+  --quads_num_agents=1 \
+  --quads_control_mode=velocity \
+  --quads_velocity_xy_max="$VELOCITY_XY_MAX" \
+  --quads_velocity_z_max="$VELOCITY_Z_MAX" \
+  --quads_velocity_max_tilt_deg=35.0 \
+  --quads_velocity_max_acc_xy="$VELOCITY_MAX_ACC_XY" \
+  --quads_velocity_max_acc_z_up=1.6 \
+  --quads_velocity_max_acc_z_down=1.6 \
+  --quads_velocity_yaw_mode=keep \
+  --quads_velocity_yaw_min_speed=0.05 \
+  --quads_velocity_yaw_rate_max=0.0 \
+  --quads_velocity_yaw_control_scale=1.0 \
+  --quads_velocity_command_smoothing_tau=0.12 \
+  --quads_episode_duration=16.0 \
+  --quads_obs_repr=xyz_vxyz_R_omega_wall \
+  --quads_neighbor_visible_num=0 \
+  --quads_neighbor_obs_type=none \
+  --quads_neighbor_encoder_type=no_encoder \
+  --quads_neighbor_hidden_size=64 \
+  --quads_obst_hidden_size=128 \
+  --quads_collision_reward=0.0 \
+  --quads_collision_hitbox_radius=2.0 \
+  --quads_collision_falloff_radius=-1.0 \
+  --quads_collision_smooth_max_penalty=0.0 \
+  --quads_use_obstacles=True \
+  --quads_obstacle_obs_type=lidar \
+  --quads_depth_min_distance=0.05 \
+  --quads_depth_max_distance=10.0 \
+  --quads_depth_noise_std="$LIDAR_NOISE_STD" \
+  --quads_depth_dropout_prob="$LIDAR_DROPOUT_PROB" \
+  --quads_depth_normalize=False \
+  --quads_obst_spawn_area 9 9 \
+  --quads_room_dims 10 10 4 \
+  --quads_goal_z_min=1.4 \
+  --quads_goal_z_max=2.2 \
+  --quads_camera_width=320 \
+  --quads_camera_height=240 \
+  --quads_camera_fov=145 \
+  --quads_camera_pitch_deg=15 \
+  --quads_use_downwash=False \
+  --quads_mode=o_random \
+  --quads_obst_density="$OBST_DENSITY" \
+  --quads_obst_size="$OBST_SIZE" \
+  --quads_obst_collision_reward="$OBST_COLLISION_REWARD" \
+  --quads_reward_obstacle_proximity="$OBST_PROXIMITY_REWARD" \
+  --quads_obstacle_safe_distance="$OBST_SAFE_DISTANCE" \
+  --quads_obst_collision_terminate=True \
+  --quads_domain_random=True \
+  --quads_obst_density_random=True \
+  --quads_obst_density_min="$OBST_DENSITY_MIN" \
+  --quads_obst_density_max="$OBST_DENSITY_MAX" \
+  --quads_obst_size_random=True \
+  --quads_obst_size_min="$OBST_SIZE_MIN" \
+  --quads_obst_size_max="$OBST_SIZE_MAX" \
+  --quads_reward_progress=3.0 \
+  --quads_reward_action_change=0.06 \
+  --quads_reward_vertical_velocity=0.30 \
+  --quads_reward_height_error=0.25 \
+  --quads_reward_thrust=0.05 \
+  --quads_reward_stagnation=0.08 \
+  --quads_reward_overspeed="$OVERSPEED_REWARD" \
+  --quads_use_goal_ball=True \
+  --quads_goal_ball_reward=1.2 \
+  --quads_goal_ball_radius=0.45 \
+  --quads_goal_ball_count=10

@@ -17,6 +17,47 @@ class Scenario_o_base(QuadrotorScenario):
 
         self.spawn_points = None
         self.cell_centers = None
+        self.wall_safe_margin = 0.0
+        self.wall_safe_free_space = []
+
+    def _wall_safe_margin_value(self):
+        wall_safe_distance = float(getattr(self.envs[0], "wall_safe_distance", 1.0))
+        return max(0.75, wall_safe_distance + 0.5)
+
+    def _is_wall_safe_xy(self, pos_x, pos_y):
+        margin = self.wall_safe_margin if self.wall_safe_margin > 0.0 else self._wall_safe_margin_value()
+        half_room_length = self.room_dims[0] / 2.0
+        half_room_width = self.room_dims[1] / 2.0
+        return abs(pos_x) <= half_room_length - margin and abs(pos_y) <= half_room_width - margin
+
+    def _filter_wall_safe_free_space(self):
+        if self.obstacle_map is None or self.cell_centers is None or len(self.free_space) == 0:
+            return list(self.free_space)
+
+        if self.wall_safe_margin <= 0.0:
+            self.wall_safe_margin = self._wall_safe_margin_value()
+
+        safe_free_space = []
+        map_width = self.obstacle_map.shape[0]
+        for row, col in self.free_space:
+            index = row + (map_width * col)
+            pos_x, pos_y = self.cell_centers[index]
+            if self._is_wall_safe_xy(pos_x, pos_y):
+                safe_free_space.append((row, col))
+        return safe_free_space
+
+    def _sample_free_space(self, free_space=None):
+        if free_space is None:
+            free_space = self.wall_safe_free_space if len(self.wall_safe_free_space) > 0 else self.free_space
+        if len(free_space) == 0:
+            raise RuntimeError("No obstacle-free cells available for sampling")
+        idx = np.random.choice(a=len(free_space), replace=False)
+        return free_space[idx]
+
+    def goal_z_bounds(self):
+        if hasattr(self.envs[0], "goal_z_range"):
+            return self.envs[0].goal_z_range
+        return 1.0, 3.0
 
     def generate_pos(self):
         half_room_length = self.room_dims[0] / 2
@@ -25,7 +66,8 @@ class Scenario_o_base(QuadrotorScenario):
         x = np.random.uniform(low=-1.0 * half_room_length + 2.0, high=half_room_length - 2.0)
         y = np.random.uniform(low=-1.0 * half_room_width + 2.0, high=half_room_width - 2.0)
 
-        z = np.random.uniform(low=1.0, high=4.0)
+        z_min, z_max = self.goal_z_bounds()
+        z = np.random.uniform(low=z_min, high=z_max)
 
         return np.array([x, y, z])
 
@@ -50,32 +92,44 @@ class Scenario_o_base(QuadrotorScenario):
         self.standard_reset(formation_center=self.start_point)
 
     def generate_pos_obst_map(self, check_surroundings=False):
-        idx = np.random.choice(a=len(self.free_space), replace=False)
-        x, y = self.free_space[idx][0], self.free_space[idx][1]
+        candidate_free_space = (
+            self.wall_safe_free_space
+            if len(self.wall_safe_free_space) > 0
+            else self.free_space
+        )
+        idx = np.random.choice(a=len(candidate_free_space), replace=False)
+        x, y = candidate_free_space[idx][0], candidate_free_space[idx][1]
         if check_surroundings:
             surroundings_free = self.check_surroundings(x, y)
             while not surroundings_free:
-                idx = np.random.choice(a=len(self.free_space), replace=False)
-                x, y = self.free_space[idx][0], self.free_space[idx][1]
+                idx = np.random.choice(a=len(candidate_free_space), replace=False)
+                x, y = candidate_free_space[idx][0], candidate_free_space[idx][1]
                 surroundings_free = self.check_surroundings(x, y)
 
         width = self.obstacle_map.shape[0]
         index = x + (width * y)
         pos_x, pos_y = self.cell_centers[index]
-        z_list_start = np.random.uniform(low=0.75, high=3.0)
+        z_min, z_max = self.goal_z_bounds()
+        z_list_start = np.random.uniform(low=max(0.75, z_min), high=z_max)
         # xy_noise = np.random.uniform(low=-0.2, high=0.2, size=2)
         return np.array([pos_x, pos_y, z_list_start])
 
     def generate_pos_obst_map_2(self, num_agents):
-        ids = np.random.choice(range(len(self.free_space)), num_agents, replace=False)
+        candidate_free_space = (
+            self.wall_safe_free_space
+            if len(self.wall_safe_free_space) >= num_agents
+            else self.free_space
+        )
+        ids = np.random.choice(range(len(candidate_free_space)), num_agents, replace=False)
 
         generated_points = []
         for idx in ids:
-            x, y = self.free_space[idx][0], self.free_space[idx][1]
+            x, y = candidate_free_space[idx][0], candidate_free_space[idx][1]
             width = self.obstacle_map.shape[0]
             index = x + (width * y)
             pos_x, pos_y = self.cell_centers[index]
-            z_list_start = np.random.uniform(low=1.0, high=3.0)
+            z_min, z_max = self.goal_z_bounds()
+            z_list_start = np.random.uniform(low=z_min, high=z_max)
             generated_points.append(np.array([pos_x, pos_y, z_list_start]))
 
         return np.array(generated_points)
@@ -149,5 +203,15 @@ class Scenario_o_base(QuadrotorScenario):
         # Return the center coordinates of the largest square area as a tuple
         index = center_x + (m * center_y)
         pos_x, pos_y = self.cell_centers[index]
-        z_list_start = np.random.uniform(low=1.5, high=3.0)
+        z_min, z_max = self.goal_z_bounds()
+        z_list_start = np.random.uniform(low=z_min, high=z_max)
+        if self._is_wall_safe_xy(pos_x, pos_y):
+            return np.array([pos_x, pos_y, z_list_start])
+
+        candidate_free_space = self.wall_safe_free_space if len(self.wall_safe_free_space) > 0 else self.free_space
+        if len(candidate_free_space) > 0:
+            sampled_row, sampled_col = self._sample_free_space(candidate_free_space)
+            width = self.obstacle_map.shape[0]
+            index = sampled_row + (width * sampled_col)
+            pos_x, pos_y = self.cell_centers[index]
         return np.array([pos_x, pos_y, z_list_start])

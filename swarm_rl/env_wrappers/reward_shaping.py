@@ -6,13 +6,29 @@ from sample_factory.envs.env_utils import TrainingInfoInterface, RewardShapingIn
 
 DEFAULT_QUAD_REWARD_SHAPING_SINGLE = dict(
     quad_rewards=dict(
-        pos=1.0, effort=0.05, spin=0.1, vel=0.0, crash=1.0, orient=1.0, yaw=0.0
+        pos=1.0,
+        effort=0.05,
+        spin=0.1,
+        vel=0.0,
+        action_change=0.0,
+        progress=0.0,
+        vz=0.0,
+        height_error=0.0,
+        thrust=0.0,
+        stagnation=0.0,
+        overspeed=0.0,
+        safe_flight=0.0,
+        crash=1.0,
+        orient=1.0,
+        yaw=0.0,
     ),
 )
 
 DEFAULT_QUAD_REWARD_SHAPING = copy.deepcopy(DEFAULT_QUAD_REWARD_SHAPING_SINGLE)
 DEFAULT_QUAD_REWARD_SHAPING['quad_rewards'].update(dict(
-    quadcol_bin=0.0, quadcol_bin_smooth_max=0.0, quadcol_bin_obst=0.0
+    quadcol_bin=0.0, quadcol_bin_smooth_max=0.0, quadcol_bin_obst=0.0, obst_proximity=0.0,
+    wallcol_bin=0.0, wall_proximity=0.0, path_alignment=0.0,
+    obstacle_clearance_delta=0.0, wall_clearance_delta=0.0
 ))
 
 
@@ -79,8 +95,12 @@ class QuadsRewardShapingWrapper(gym.Wrapper, TrainingInfoInterface, RewardShapin
                 true_reward = self.cumulative_rewards[i]['rewraw_main']
                 true_reward_consider_collisions = True
                 if true_reward_consider_collisions:
-                    # we ideally want zero collisions, so collisions between quads are given very high weight
-                    true_reward += 1000 * self.cumulative_rewards[i].get('rewraw_quadcol', 0)
+                    # Keep the logged success metric collision-aware without dwarfing
+                    # all navigation signal into misleading -1000/-2000 episode values.
+                    collision_metric_scale = 1.0
+                    true_reward += collision_metric_scale * self.cumulative_rewards[i].get('rewraw_quadcol', 0)
+                    true_reward += collision_metric_scale * self.cumulative_rewards[i].get('rewraw_quadcol_obstacle', 0)
+                    true_reward += collision_metric_scale * self.cumulative_rewards[i].get('rewraw_wall_collision', 0)
 
                 info['true_reward'] = true_reward
                 self.cumulative_rewards[i]['rewraw_main'] = true_reward
