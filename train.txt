@@ -1,5 +1,12 @@
 当前使用：snapshot 作者模型 + PID 避障继续训练版
 
+干净模型包：
+/home/lzh/drone/quad-swarm-packaged-models
+
+两份规范命名模型：
+1. single_quad_lidar_original_best_20260529
+2. single_quad_lidar_pid_best_20260529
+
 原版作者模型保留不动：
 /home/lzh/drone/quad-swarm-rl-single-snapshot-lidar-20260529/train_dir/single_quad_obstacles_lidar_wall/single_obstacles_lidar_wall_/00_single_obstacles_lidar_wall_see_0/
 
