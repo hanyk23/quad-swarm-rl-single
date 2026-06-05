@@ -394,6 +394,13 @@ class QuadrotorSingle:
                 yaw_control_scale=self.velocity_yaw_control_scale,
                 command_smoothing_tau=self.velocity_command_smoothing_tau,
             )
+        elif self.control_mode == 'legacy_velocity_yaw':
+            self.controller = VelocityYawControl(
+                self.dynamics,
+                max_speed_xy=self.velocity_max_xy,
+                max_speed_z=self.velocity_max_z,
+                max_yaw_rate=self.velocity_yaw_rate_max if self.velocity_yaw_rate_max > 0.0 else 4 * np.pi,
+            )
         elif self.control_mode == 'velocity_yaw':
             self.controller = BodyVelocityYawControl(
                 self.dynamics,

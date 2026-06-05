@@ -4,6 +4,9 @@ cd /home/lzh/drone/quad-swarm-rl-single
 最终模型:
 quad-swarm-packaged-models/paper_single_quad_lidar_pid_best
 
+控制入口:
+legacy_velocity_yaw，对应原 snapshot 的 quads_control_type=velocity_yaw
+
 正式仿真，默认读取 best:
 cd /home/lzh/drone/quad-swarm-rl-single
 bash paper_enjoy_lidar_pid.sh

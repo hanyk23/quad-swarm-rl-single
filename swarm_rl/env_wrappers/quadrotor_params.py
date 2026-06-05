@@ -28,7 +28,7 @@ def add_quadrotors_env_args(env, parser):
                    help='Number of low-level physics steps per RL/control step')
     p.add_argument('--quads_encoder_type', default="corl", type=str, help='The type of the neighborhood encoder')
     p.add_argument('--quads_control_mode', default='raw', type=str,
-                   choices=['raw', 'velocity', 'velocity_yaw', 'velocity_yaw_avoid', 'velocity_attitude'],
+                   choices=['raw', 'velocity', 'legacy_velocity_yaw', 'velocity_yaw', 'velocity_yaw_avoid', 'velocity_attitude'],
                    help='Action interface: raw motor thrust, velocity, body velocity plus yaw rate, or velocity plus attitude')
     p.add_argument('--quads_control_type', default=None, type=str,
                    help='Legacy snapshot alias for quads_control_mode')

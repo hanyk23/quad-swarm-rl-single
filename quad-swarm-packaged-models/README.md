@@ -8,7 +8,7 @@ This directory is the self-contained model bundle for the paper-style single-qua
 
 - Task: single quadrotor obstacle navigation with lidar observations.
 - Policy checkpoint: `checkpoint_p0/best_000007350_7526400_reward_50.919.pth`.
-- Runtime controller: velocity-yaw policy with controller-level PID obstacle avoidance.
+- Runtime controller: legacy velocity-yaw controller from the snapshot training code.
 - The original external snapshot checkout is not required.
 
 ## Evaluation

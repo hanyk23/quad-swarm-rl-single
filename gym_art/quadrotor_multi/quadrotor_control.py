@@ -20,7 +20,7 @@ class ShiftedMotorControl(object):
 
     # modifies the dynamics in place.
     # @profile
-    def step(self, dynamics, action, goal=None, dt=0.0, observation=None):
+    def step(self, dynamics, action, dt):
         action = (action + 1.0) / dynamics.thrust_to_weight
         action[action < 0] = 0
         action[action > 1] = 1
