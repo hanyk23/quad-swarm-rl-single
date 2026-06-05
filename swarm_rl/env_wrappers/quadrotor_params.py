@@ -71,6 +71,20 @@ def add_quadrotors_env_args(env, parser):
     p.add_argument('--quads_control_type', default='velocity_yaw', type=str,
                    choices=['velocity_yaw', 'velocity_yaw_avoid', 'raw_motor', 'position'],
                    help='Low-level control interface used by the environment')
+    p.add_argument('--quads_velocity_yaw_avoid_radius', default=0.8, type=float,
+                   help='Obstacle clearance radius where velocity_yaw_avoid starts adding PID repulsion')
+    p.add_argument('--quads_velocity_yaw_avoid_gain', default=1.4, type=float,
+                   help='Baseline proportional obstacle repulsion gain for velocity_yaw_avoid')
+    p.add_argument('--quads_velocity_yaw_avoid_pid_kp', default=1.2, type=float,
+                   help='PID proportional gain for obstacle clearance error')
+    p.add_argument('--quads_velocity_yaw_avoid_pid_ki', default=0.0, type=float,
+                   help='PID integral gain for obstacle clearance error')
+    p.add_argument('--quads_velocity_yaw_avoid_pid_kd', default=0.12, type=float,
+                   help='PID derivative gain for rapidly decreasing obstacle clearance')
+    p.add_argument('--quads_velocity_yaw_avoid_integral_limit', default=1.0, type=float,
+                   help='Absolute clamp for the obstacle avoidance PID integral term')
+    p.add_argument('--quads_velocity_yaw_avoid_max_bias', default=1.2, type=float,
+                   help='Maximum obstacle avoidance velocity bias added to the learned command')
 
     # Obstacle
     # # Obstacle Features
@@ -145,6 +159,12 @@ def add_quadrotors_env_args(env, parser):
                    type=str, choices=['topdown', 'chase', 'side', 'global', 'corner0', 'corner1', 'corner2', 'corner3', 'topdownfollow'],
                    help='Choose which kind of view/camera to use')
     p.add_argument('--quads_render', default=False, type=bool, help='Use render or not')
+    p.add_argument('--quads_render_speed', default=1.0, type=float,
+                   help='Realtime render speed multiplier. Values >1 speed up playback if the machine keeps up')
+    p.add_argument('--quads_render_width', default=600, type=int,
+                   help='Render window width per 3D view')
+    p.add_argument('--quads_render_height', default=480, type=int,
+                   help='Render window height per 3D view')
     p.add_argument('--visualize_v_value', action='store_true', help="Visualize v value map")
 
     # Sim2Real

@@ -256,23 +256,39 @@ class VelocityYawControl(object):
 
 class VelocityYawAvoidControl(VelocityYawControl):
     """
-    Velocity-yaw controller with a simple SDF-based repulsion term.
+    Velocity-yaw controller with a PID SDF-based repulsion term.
 
     This is a lightweight local obstacle-avoidance layer, not a full planner.
     It nudges the commanded velocity away from the nearest occupied lidar cell.
     """
-    def __init__(self, dynamics, max_speed=3.0, avoid_radius=0.8, avoid_gain=1.4):
+    def __init__(self, dynamics, max_speed=3.0, avoid_radius=0.8, avoid_gain=1.4,
+                 pid_kp=1.2, pid_ki=0.0, pid_kd=0.12, integral_limit=1.0, max_bias=1.2):
         super().__init__(dynamics, max_speed=max_speed)
         self.dynamics = dynamics
-        self.avoid_radius = avoid_radius
-        self.avoid_gain = avoid_gain
+        self.avoid_radius = float(avoid_radius)
+        self.avoid_gain = float(avoid_gain)
+        self.pid_kp = float(pid_kp)
+        self.pid_ki = float(pid_ki)
+        self.pid_kd = float(pid_kd)
+        self.integral_limit = float(integral_limit)
+        self.max_bias = float(max_bias)
+        self.error_integral = 0.0
+        self.prev_error = 0.0
+        self.pid_initialized = False
 
-    def _avoidance_bias(self, observation):
+    def _reset_pid(self):
+        self.error_integral = 0.0
+        self.prev_error = 0.0
+        self.pid_initialized = False
+
+    def _avoidance_bias(self, observation, dt=0.0):
         if observation is None:
+            self._reset_pid()
             return np.zeros(3, dtype=np.float64)
 
         obs = np.asarray(observation).reshape(-1)
         if obs.size < 9:
+            self._reset_pid()
             return np.zeros(3, dtype=np.float64)
 
         sdf = obs[-9:]
@@ -280,6 +296,7 @@ class VelocityYawAvoidControl(VelocityYawControl):
         min_dist = float(sdf[min_idx])
 
         if not np.isfinite(min_dist) or min_dist >= self.avoid_radius:
+            self._reset_pid()
             return np.zeros(3, dtype=np.float64)
 
         # 3x3 stencil centered on the quad. Repel away from the closest occupied cell.
@@ -299,15 +316,44 @@ class VelocityYawAvoidControl(VelocityYawControl):
 
         lateral_norm = np.linalg.norm(lateral)
         if lateral_norm < 1e-6:
+            self._reset_pid()
             return np.zeros(3, dtype=np.float64)
 
         lateral = lateral / lateral_norm
-        strength = self.avoid_gain * max(0.0, self.avoid_radius - min_dist) / max(self.avoid_radius, 1e-6)
+        error = max(0.0, self.avoid_radius - min_dist)
+        dt = max(float(dt), 1e-6)
+        if self.pid_initialized:
+            derivative = (error - self.prev_error) / dt
+        else:
+            derivative = 0.0
+            self.pid_initialized = True
+
+        self.error_integral = np.clip(
+            self.error_integral + error * dt,
+            -self.integral_limit,
+            self.integral_limit,
+        )
+        self.prev_error = error
+
+        approach_speed = max(0.0, -float(np.dot(self.dynamics.vel[:2], lateral)))
+        derivative_term = max(0.0, derivative, approach_speed)
+        pid_strength = (
+            self.pid_kp * error +
+            self.pid_ki * self.error_integral +
+            self.pid_kd * derivative_term
+        )
+        shaped_strength = self.avoid_gain * error / max(self.avoid_radius, 1e-6)
+        close_ratio = error / max(self.avoid_radius, 1e-6)
+        emergency_strength = 0.0
+        if close_ratio > 0.35:
+            emergency_strength = approach_speed * close_ratio
+
+        strength = np.clip(max(pid_strength, shaped_strength, emergency_strength), 0.0, self.max_bias)
         return np.array([lateral[0] * strength, lateral[1] * strength, 0.0], dtype=np.float64)
 
     def step(self, dynamics, action, goal=None, dt=0.0, observation=None):
         action = np.asarray(action, dtype=np.float64).copy()
-        action[:3] += self._avoidance_bias(observation)
+        action[:3] += self._avoidance_bias(observation, dt=dt)
         return super().step(dynamics, action, goal=goal, dt=dt, observation=observation)
 
 

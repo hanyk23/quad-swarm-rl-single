@@ -64,6 +64,16 @@ def make_quadrotor_env_multi(cfg, render_mode=None, **kwargs):
         dynamics_randomize_every=dyn_randomize_every, dynamics_change=dynamics_change, dyn_sampler_1=sampler_1,
         sense_noise=sense_noise, init_random_state=False, control_type=cfg.quads_control_type,
         velocity_yaw_max_speed=cfg.quads_velocity_yaw_max_speed,
+        velocity_yaw_avoid_radius=cfg.quads_velocity_yaw_avoid_radius,
+        velocity_yaw_avoid_gain=cfg.quads_velocity_yaw_avoid_gain,
+        velocity_yaw_avoid_pid_kp=cfg.quads_velocity_yaw_avoid_pid_kp,
+        velocity_yaw_avoid_pid_ki=cfg.quads_velocity_yaw_avoid_pid_ki,
+        velocity_yaw_avoid_pid_kd=cfg.quads_velocity_yaw_avoid_pid_kd,
+        velocity_yaw_avoid_integral_limit=cfg.quads_velocity_yaw_avoid_integral_limit,
+        velocity_yaw_avoid_max_bias=cfg.quads_velocity_yaw_avoid_max_bias,
+        quads_render_speed=cfg.quads_render_speed,
+        quads_render_width=cfg.quads_render_width,
+        quads_render_height=cfg.quads_render_height,
         # Rendering
         render_mode=render_mode,
     )

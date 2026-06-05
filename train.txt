@@ -1,18 +1,11 @@
 项目路径:
 cd /home/lzh/drone/quad-swarm-rl-single
 
-最终模型:
+最终的base模型:
 quad-swarm-packaged-models/paper_single_quad_lidar_pid_best
 
-模型来源:
-/home/lzh/drone/quad-swarm-rl-single.zip
-train_dir/single_quad_obstacles_lidar_wall/single_obstacles_lidar_wall_/00_single_obstacles_lidar_wall_see_0
-
 底层代码来源:
-gym_art/ 和 swarm_rl/ 已按 /home/lzh/drone/quad-swarm-rl-single.zip 覆盖同步
-
-默认 checkpoint:
-latest = checkpoint_000008520_8724480.pth
+gym_art/ 和 swarm_rl/ 
 
 正式仿真，默认读取 latest:
 cd /home/lzh/drone/quad-swarm-rl-single
@@ -22,13 +15,25 @@ bash paper_enjoy_lidar_pid.sh
 cd /home/lzh/drone/quad-swarm-rl-single
 CHECKPOINT_KIND=best bash paper_enjoy_lidar_pid.sh
 
+只看原始模型控制，不加 PID:
+cd /home/lzh/drone/quad-swarm-rl-single
+CONTROL_TYPE=velocity_yaw bash paper_enjoy_lidar_pid.sh
+
 无显示器/SSH 下做加载测试:
 cd /home/lzh/drone/quad-swarm-rl-single
 DEVICE=cpu RENDER=False NO_RENDER=True MAX_NUM_EPISODES=1 bash paper_enjoy_lidar_pid.sh
 
 基于最终模型继续训练，不覆盖模型包:
+默认从 packaged latest checkpoint 复制到 finetune 实验，然后继续训练到 12000000 env steps。
 cd /home/lzh/drone/quad-swarm-rl-single
 bash paper_train_lidar_pid.sh
 
 训练输出目录:
 /home/lzh/drone/quad-swarm-rl-single/train_dir_paper_lidar_pid/paper_single_quad_lidar_pid_finetune
+
+看训练后的模型:
+cd /home/lzh/drone/quad-swarm-rl-single
+MODEL_DIR=/home/lzh/drone/quad-swarm-rl-single/train_dir_paper_lidar_pid \
+EXPERIMENT=paper_single_quad_lidar_pid_finetune \
+CHECKPOINT_KIND=latest \
+bash paper_enjoy_lidar_pid.sh

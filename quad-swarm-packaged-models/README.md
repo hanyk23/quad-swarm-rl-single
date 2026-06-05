@@ -16,9 +16,18 @@ The runtime environment/control code in `gym_art/` and `swarm_rl/` has also been
 
 ## Evaluation
 
+Default evaluation uses the packaged latest checkpoint with PID obstacle-avoidance assist, chase + topdown views, and the projection obstacle map enabled.
+
 ```bash
 cd /home/lzh/drone/quad-swarm-rl-single
 bash paper_enjoy_lidar_pid.sh
+```
+
+To evaluate the original learned controller without PID assist:
+
+```bash
+cd /home/lzh/drone/quad-swarm-rl-single
+CONTROL_TYPE=velocity_yaw bash paper_enjoy_lidar_pid.sh
 ```
 
 For headless loading tests:
@@ -29,6 +38,8 @@ DEVICE=cpu RENDER=False NO_RENDER=True MAX_NUM_EPISODES=1 bash paper_enjoy_lidar
 ```
 
 ## Continued Training
+
+This continues from the packaged model in a separate finetune experiment and keeps the package unchanged.
 
 ```bash
 cd /home/lzh/drone/quad-swarm-rl-single

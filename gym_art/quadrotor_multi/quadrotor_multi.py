@@ -38,6 +38,11 @@ class QuadrotorEnvMulti(gym.Env):
                  dynamics_randomize_every, dynamics_change, dyn_sampler_1,
                  sense_noise, init_random_state,
                  control_type='velocity_yaw', velocity_yaw_max_speed=3.0,
+                 velocity_yaw_avoid_radius=0.8, velocity_yaw_avoid_gain=1.4,
+                 velocity_yaw_avoid_pid_kp=1.2, velocity_yaw_avoid_pid_ki=0.0,
+                 velocity_yaw_avoid_pid_kd=0.12, velocity_yaw_avoid_integral_limit=1.0,
+                 velocity_yaw_avoid_max_bias=1.2,
+                 quads_render_speed=1.0, quads_render_width=600, quads_render_height=480,
                  # Rendering
                  render_mode='human'
                  ):
@@ -74,6 +79,13 @@ class QuadrotorEnvMulti(gym.Env):
                 # Obstacle
                 use_obstacles=use_obstacles,
                 control_type=control_type, velocity_yaw_max_speed=velocity_yaw_max_speed,
+                velocity_yaw_avoid_radius=velocity_yaw_avoid_radius,
+                velocity_yaw_avoid_gain=velocity_yaw_avoid_gain,
+                velocity_yaw_avoid_pid_kp=velocity_yaw_avoid_pid_kp,
+                velocity_yaw_avoid_pid_ki=velocity_yaw_avoid_pid_ki,
+                velocity_yaw_avoid_pid_kd=velocity_yaw_avoid_pid_kd,
+                velocity_yaw_avoid_integral_limit=velocity_yaw_avoid_integral_limit,
+                velocity_yaw_avoid_max_bias=velocity_yaw_avoid_max_bias,
             )
             self.envs.append(e)
 
@@ -194,6 +206,8 @@ class QuadrotorEnvMulti(gym.Env):
         # # set to true whenever we need to reset the OpenGL scene in render()
         self.render_mode =render_mode
         self.quads_render = quads_render
+        self.render_window_w = int(quads_render_width)
+        self.render_window_h = int(quads_render_height)
         self.scenes = []
         if self.quads_render:
             self.reset_scene = False
@@ -201,7 +215,7 @@ class QuadrotorEnvMulti(gym.Env):
             self.frames_since_last_render = self.render_skip_frames = 0
             self.render_every_nth_frame = 1
             # # Use this to control rendering speed
-            self.render_speed = 1.0
+            self.render_speed = max(0.1, float(quads_render_speed))
             self.quads_formation_size = 2.0
             self.all_collisions = {}
 
@@ -339,7 +353,7 @@ class QuadrotorEnvMulti(gym.Env):
         for i in range(len(self.quads_view_mode)):
             self.scenes.append(Quadrotor3DSceneMulti(
                 models=models,
-                w=600, h=480, resizable=True, viewpoint=self.quads_view_mode[i],
+                w=self.render_window_w, h=self.render_window_h, resizable=True, viewpoint=self.quads_view_mode[i],
                 room_dims=self.room_dims, num_agents=self.num_agents,
                 render_speed=self.render_speed, formation_size=self.quads_formation_size, obstacles=self.obstacles,
                 vis_vel_arrows=False, vis_acc_arrows=True, viz_traces=25, viz_trace_nth_step=1,

@@ -160,7 +160,11 @@ class QuadrotorSingle:
                  init_random_state=False, sense_noise=None, verbose=False, gravity=GRAV,
                  t2w_std=0.005, t2t_std=0.0005, excite=False, dynamics_simplification=False, use_numba=False,
                  neighbor_obs_type='none', num_agents=1, num_use_neighbor_obs=0, use_obstacles=False,
-                 control_type='velocity_yaw', velocity_yaw_max_speed=3.0):
+                 control_type='velocity_yaw', velocity_yaw_max_speed=3.0,
+                 velocity_yaw_avoid_radius=0.8, velocity_yaw_avoid_gain=1.4,
+                 velocity_yaw_avoid_pid_kp=1.2, velocity_yaw_avoid_pid_ki=0.0,
+                 velocity_yaw_avoid_pid_kd=0.12, velocity_yaw_avoid_integral_limit=1.0,
+                 velocity_yaw_avoid_max_bias=1.2):
         np.seterr(under='ignore')
         """
         Args:
@@ -223,6 +227,13 @@ class QuadrotorSingle:
         self.raw_control_zero_middle = raw_control_zero_middle
         self.control_type = control_type
         self.velocity_yaw_max_speed = velocity_yaw_max_speed
+        self.velocity_yaw_avoid_radius = velocity_yaw_avoid_radius
+        self.velocity_yaw_avoid_gain = velocity_yaw_avoid_gain
+        self.velocity_yaw_avoid_pid_kp = velocity_yaw_avoid_pid_kp
+        self.velocity_yaw_avoid_pid_ki = velocity_yaw_avoid_pid_ki
+        self.velocity_yaw_avoid_pid_kd = velocity_yaw_avoid_pid_kd
+        self.velocity_yaw_avoid_integral_limit = velocity_yaw_avoid_integral_limit
+        self.velocity_yaw_avoid_max_bias = velocity_yaw_avoid_max_bias
         self.tf_control = tf_control
         self.dynamics_randomize_every = dynamics_randomize_every
         self.verbose = verbose
@@ -320,7 +331,17 @@ class QuadrotorSingle:
         if self.control_type == 'velocity_yaw':
             self.controller = VelocityYawControl(self.dynamics, max_speed=self.velocity_yaw_max_speed)
         elif self.control_type == 'velocity_yaw_avoid':
-            self.controller = VelocityYawAvoidControl(self.dynamics, max_speed=self.velocity_yaw_max_speed)
+            self.controller = VelocityYawAvoidControl(
+                self.dynamics,
+                max_speed=self.velocity_yaw_max_speed,
+                avoid_radius=self.velocity_yaw_avoid_radius,
+                avoid_gain=self.velocity_yaw_avoid_gain,
+                pid_kp=self.velocity_yaw_avoid_pid_kp,
+                pid_ki=self.velocity_yaw_avoid_pid_ki,
+                pid_kd=self.velocity_yaw_avoid_pid_kd,
+                integral_limit=self.velocity_yaw_avoid_integral_limit,
+                max_bias=self.velocity_yaw_avoid_max_bias,
+            )
         elif self.raw_control:
             if self.dim_mode == '1D':  # Z axis only
                 self.controller = VerticalControl(self.dynamics, zero_action_middle=self.raw_control_zero_middle)
