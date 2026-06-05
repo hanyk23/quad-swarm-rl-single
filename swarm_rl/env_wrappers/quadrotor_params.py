@@ -28,8 +28,10 @@ def add_quadrotors_env_args(env, parser):
                    help='Number of low-level physics steps per RL/control step')
     p.add_argument('--quads_encoder_type', default="corl", type=str, help='The type of the neighborhood encoder')
     p.add_argument('--quads_control_mode', default='raw', type=str,
-                   choices=['raw', 'velocity', 'velocity_yaw', 'velocity_attitude'],
+                   choices=['raw', 'velocity', 'velocity_yaw', 'velocity_yaw_avoid', 'velocity_attitude'],
                    help='Action interface: raw motor thrust, velocity, body velocity plus yaw rate, or velocity plus attitude')
+    p.add_argument('--quads_control_type', default=None, type=str,
+                   help='Legacy snapshot alias for quads_control_mode')
     p.add_argument('--quads_velocity_xy_max', default=2.0, type=float,
                    help='Maximum commanded speed in x/y when using velocity control')
     p.add_argument('--quads_velocity_z_max', default=1.0, type=float,
@@ -49,6 +51,8 @@ def add_quadrotors_env_args(env, parser):
                    help='Minimum horizontal speed/command used for velocity-based yaw alignment')
     p.add_argument('--quads_velocity_yaw_rate_max', default=0.0, type=float,
                    help='Yaw rate limit in rad/s for automatic alignment or policy yaw control')
+    p.add_argument('--quads_velocity_yaw_max_speed', default=None, type=float,
+                   help='Legacy snapshot velocity-yaw speed limit alias')
     p.add_argument('--quads_velocity_yaw_control_scale', default=1.0, type=float,
                    help='Multiplier for yaw attitude correction in the internal velocity controller')
     p.add_argument('--quads_velocity_command_smoothing_tau', default=0.0, type=float,

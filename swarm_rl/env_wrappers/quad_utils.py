@@ -21,7 +21,20 @@ def make_quadrotor_env_multi(cfg, render_mode=None, **kwargs):
     from gym_art.quadrotor_multi.quadrotor_multi import QuadrotorEnvMulti
     quad = 'Crazyflie'
     dyn_randomize_every = dyn_randomization_ratio = None
-    raw_control = cfg.quads_control_mode == 'raw'
+    control_mode = cfg.quads_control_mode
+    legacy_control_mode = getattr(cfg, "quads_control_type", None)
+    if control_mode == 'raw' and legacy_control_mode:
+        control_mode = legacy_control_mode
+
+    velocity_max_xy = cfg.quads_velocity_xy_max
+    velocity_max_z = cfg.quads_velocity_z_max
+    legacy_velocity_yaw_max_speed = getattr(cfg, "quads_velocity_yaw_max_speed", None)
+    if control_mode == "velocity_yaw_avoid" and legacy_velocity_yaw_max_speed is not None:
+        velocity_max_xy = float(legacy_velocity_yaw_max_speed)
+        velocity_max_z = float(legacy_velocity_yaw_max_speed)
+
+    controller_obstacle_avoidance = cfg.quads_controller_obstacle_avoidance or control_mode == "velocity_yaw_avoid"
+    raw_control = control_mode == 'raw'
     raw_control_zero_middle = True
 
     sampler_1 = None
@@ -78,8 +91,8 @@ def make_quadrotor_env_multi(cfg, render_mode=None, **kwargs):
         # Quadrotor Specific (Do Not Change)
         dynamics_params=quad, raw_control=raw_control, raw_control_zero_middle=raw_control_zero_middle,
         dynamics_randomize_every=dyn_randomize_every, dynamics_change=dynamics_change, dyn_sampler_1=sampler_1,
-        sense_noise=sense_noise, init_random_state=False, control_mode=cfg.quads_control_mode,
-        velocity_max_xy=cfg.quads_velocity_xy_max, velocity_max_z=cfg.quads_velocity_z_max,
+        sense_noise=sense_noise, init_random_state=False, control_mode=control_mode,
+        velocity_max_xy=velocity_max_xy, velocity_max_z=velocity_max_z,
         velocity_max_tilt_deg=cfg.quads_velocity_max_tilt_deg,
         velocity_max_acc_xy=cfg.quads_velocity_max_acc_xy,
         velocity_max_acc_z_up=cfg.quads_velocity_max_acc_z_up,
@@ -89,7 +102,7 @@ def make_quadrotor_env_multi(cfg, render_mode=None, **kwargs):
         velocity_yaw_rate_max=cfg.quads_velocity_yaw_rate_max,
         velocity_yaw_control_scale=cfg.quads_velocity_yaw_control_scale,
         velocity_command_smoothing_tau=cfg.quads_velocity_command_smoothing_tau,
-        controller_obstacle_avoidance=cfg.quads_controller_obstacle_avoidance,
+        controller_obstacle_avoidance=controller_obstacle_avoidance,
         obstacle_avoidance_distance=cfg.quads_obstacle_avoidance_distance,
         obstacle_avoidance_max_speed=cfg.quads_obstacle_avoidance_max_speed,
         obstacle_avoidance_gain=cfg.quads_obstacle_avoidance_gain,

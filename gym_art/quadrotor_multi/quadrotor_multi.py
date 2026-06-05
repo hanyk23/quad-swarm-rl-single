@@ -879,7 +879,7 @@ class QuadrotorEnvMulti(gym.Env):
 
     def apply_controller_action_assist(self, agent_id, action):
         action = np.array(action, dtype=np.float32, copy=True)
-        if self.control_mode != "velocity" or len(action) < 3:
+        if self.control_mode not in ("velocity", "velocity_yaw_avoid") or len(action) < 3:
             return action
 
         action = self.assist_goal_ball_capture_action(agent_id, action)
@@ -890,6 +890,8 @@ class QuadrotorEnvMulti(gym.Env):
         controller = getattr(self.envs[agent_id], "controller", None)
         if controller is not None and hasattr(controller, "_clip_velocity_command"):
             action = controller._clip_velocity_command(action)
+        elif controller is not None and hasattr(controller, "low") and hasattr(controller, "high"):
+            action = np.clip(action, a_min=controller.low, a_max=controller.high)
         return action.astype(np.float32)
 
     def get_rel_pos_vel_item(self, env_id, indices=None):

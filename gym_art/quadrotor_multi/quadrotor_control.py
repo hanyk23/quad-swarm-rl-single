@@ -20,7 +20,7 @@ class ShiftedMotorControl(object):
 
     # modifies the dynamics in place.
     # @profile
-    def step(self, dynamics, action, dt):
+    def step(self, dynamics, action, goal=None, dt=0.0, observation=None):
         action = (action + 1.0) / dynamics.thrust_to_weight
         action[action < 0] = 0
         action[action > 1] = 1
@@ -202,18 +202,27 @@ class OmegaThrustControl(object):
 
 # TODO: this has not been tested well yet.
 class VelocityYawControl(object):
-    def __init__(self, dynamics):
+    def __init__(self, dynamics, max_speed_xy=20.0, max_speed_z=None, max_yaw_rate=4 * np.pi):
         jacobian = quadrotor_jacobian(dynamics)
         self.Jinv = np.linalg.inv(jacobian)
+        self.max_speed_xy = float(max_speed_xy)
+        self.max_speed_z = float(max_speed_xy if max_speed_z is None else max_speed_z)
+        self.max_yaw_rate = float(max_yaw_rate)
+        self.action = None
+        self.step_func = self.step
 
     def action_space(self, dynamics):
-        vmax = 20.0  # meters / sec
-        dymax = 4 * np.pi  # radians / sec
-        high = np.array([vmax, vmax, vmax, dymax])
-        return spaces.Box(-high, high, dtype=np.float32)
+        high = np.array([self.max_speed_xy, self.max_speed_xy, self.max_speed_z, self.max_yaw_rate])
+        self.low = -high
+        self.high = high
+        return spaces.Box(self.low, self.high, dtype=np.float32)
+
+    def reset(self, dynamics=None):
+        self.action = None
 
     # @profile
-    def step(self, dynamics, action, dt):
+    def step(self, dynamics, action, goal=None, dt=0.0, observation=None):
+        action = np.clip(action, a_min=self.low, a_max=self.high)
         # needs to be much bigger than in normal controller
         # so the random initial actions in RL create some signal
         kp_v = 5.0
@@ -239,13 +248,13 @@ class VelocityYawControl(object):
 
         dw_des = -kp_a * e_R - kd_a * e_w
         # we want this acceleration, but we can only accelerate in one direction!
-        # thrust_mag = np.dot(acc_des, dynamics.rot[:,2])
-        thrust_mag = get_blas_funcs("thrust_mag", [acc_des, dynamics.rot[:, 2]])
+        thrust_mag = np.dot(acc_des, dynamics.rot[:, 2])
 
         des = np.append(thrust_mag, dw_des)
         thrusts = np.matmul(self.Jinv, des)
         thrusts = np.clip(thrusts, a_min=0.0, a_max=1.0)
         dynamics.step(thrusts, dt)
+        self.action = action.copy()
 
 
 class VelocityControl(object):

@@ -1,23 +1,20 @@
-当前使用：snapshot 作者模型 + PID 避障 best 版
-
-模型包：
-/home/lzh/drone/quad-swarm-packaged-models
-
-两份模型：
-1. single_quad_lidar_original_best_20260529
-2. single_quad_lidar_pid_best_20260529
-
-
-继续训练 PID 版：
+项目路径:
 cd /home/lzh/drone/quad-swarm-rl-single
-bash train_snapshot_lidar_pid.sh
 
+最终模型:
+quad-swarm-packaged-models/paper_single_quad_lidar_pid_best
 
-看 PID 版 latest：
+正式仿真，默认读取 best:
 cd /home/lzh/drone/quad-swarm-rl-single
-bash enjoy_snapshot_lidar_pid.sh
+bash paper_enjoy_lidar_pid.sh
 
-
-看 PID 版 best（推荐）：
+无显示器/SSH 下做加载测试:
 cd /home/lzh/drone/quad-swarm-rl-single
-CHECKPOINT_KIND=best bash enjoy_snapshot_lidar_pid.sh
+DEVICE=cpu RENDER=False NO_RENDER=True MAX_NUM_EPISODES=1 bash paper_enjoy_lidar_pid.sh
+
+基于最终模型继续训练，不覆盖模型包:
+cd /home/lzh/drone/quad-swarm-rl-single
+bash paper_train_lidar_pid.sh
+
+训练输出目录:
+/home/lzh/drone/quad-swarm-rl-single/train_dir_paper_lidar_pid/paper_single_quad_lidar_pid_finetune

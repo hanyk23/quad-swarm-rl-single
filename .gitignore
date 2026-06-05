@@ -14,4 +14,5 @@ _results
 *.egg-info/
 train_dir/
 train_dir_velocity_nav/
+train_dir_paper_lidar_pid/
 wandb/
