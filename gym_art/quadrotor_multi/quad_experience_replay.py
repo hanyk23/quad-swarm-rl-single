@@ -123,7 +123,7 @@ class ExperienceReplayWrapper(gym.Wrapper):
         if any(dones):
             obs = self.new_episode()
             for i in range(len(infos)):
-                if "episode_extra_stats" not in infos[i] or not infos[i]["episode_extra_stats"]:
+                if not infos[i]["episode_extra_stats"]:
                     infos[i]["episode_extra_stats"] = dict()
 
                 tag = "replay"

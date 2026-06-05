@@ -13,6 +13,9 @@ RENDER="${RENDER:-True}"
 NO_RENDER="${NO_RENDER:-False}"
 
 EXTRA_ARGS=()
+if [[ "$RENDER" == "True" || "$RENDER" == "true" || "$RENDER" == "1" ]]; then
+  EXTRA_ARGS+=(--quads_render=True)
+fi
 if [[ "$NO_RENDER" == "True" || "$NO_RENDER" == "true" || "$NO_RENDER" == "1" ]]; then
   EXTRA_ARGS+=(--no_render)
 fi
@@ -27,7 +30,6 @@ exec "$PYTHON_BIN" -m swarm_rl.enjoy \
   --max_num_episodes="$MAX_NUM_EPISODES" \
   --quads_episode_duration="$EPISODE_DURATION" \
   --quads_use_numba=False \
-  --quads_render="$RENDER" \
   --replay_buffer_sample_prob=0 \
   --quads_view_mode=chase \
   "${EXTRA_ARGS[@]}"

@@ -17,12 +17,46 @@ def get_surround_sdfs(quad_poses, obst_poses, quads_sdf_obs, obst_radius, resolu
 
                 min_dist = 100.0
                 for o_pos in obst_poses:
-                    dist = np.linalg.norm(grid_pos - o_pos)
+                    dist = np.linalg.norm(grid_pos - o_pos) - obst_radius
                     if dist < min_dist:
                         min_dist = dist
 
                 g_id = g_i * 3 + g_j
-                quads_sdf_obs[i, g_id] = min_dist - obst_radius
+                quads_sdf_obs[i, g_id] = min_dist
+
+    return quads_sdf_obs
+
+
+@njit
+def get_surround_sdfs_with_bounds(quad_poses, obst_poses, quads_sdf_obs, obst_radius, resolution, room_dims):
+    # Shape of quads_sdf_obs: (quad_num, 9)
+
+    for i, q_pos in enumerate(quad_poses):
+        q_pos_x, q_pos_y = q_pos[0], q_pos[1]
+
+        for g_i, g_x in enumerate([q_pos_x - resolution, q_pos_x, q_pos_x + resolution]):
+            for g_j, g_y in enumerate([q_pos_y - resolution, q_pos_y, q_pos_y + resolution]):
+                grid_pos = np.array([g_x, g_y])
+
+                min_dist = 100.0
+                for o_pos in obst_poses:
+                    dist = np.linalg.norm(grid_pos - o_pos) - obst_radius
+                    if dist < min_dist:
+                        min_dist = dist
+
+                half_length = room_dims[0] / 2.0
+                half_width = room_dims[1] / 2.0
+                wall_dist = min(
+                    grid_pos[0] + half_length,
+                    half_length - grid_pos[0],
+                    grid_pos[1] + half_width,
+                    half_width - grid_pos[1],
+                )
+                if wall_dist < min_dist:
+                    min_dist = wall_dist
+
+                g_id = g_i * 3 + g_j
+                quads_sdf_obs[i, g_id] = min_dist
 
     return quads_sdf_obs
 

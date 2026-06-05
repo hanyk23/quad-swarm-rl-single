@@ -69,10 +69,6 @@ class Scenario_o_ep_rand_bezier(Scenario_o_base):
 
         obst_map_locs = np.where(self.obstacle_map == 0)
         self.free_space = list(zip(*obst_map_locs))
-        self.wall_safe_margin = self._wall_safe_margin_value()
-        self.wall_safe_free_space = self._filter_wall_safe_free_space()
-        if len(self.wall_safe_free_space) == 0:
-            self.wall_safe_free_space = list(self.free_space)
 
         self.start_point = self.generate_pos_obst_map_2(num_agents=self.num_agents)
         self.end_point = self.generate_pos_obst_map()

@@ -32,10 +32,6 @@ class Scenario_o_swap_goals(Scenario_o_base):
 
         obst_map_locs = np.where(self.obstacle_map == 0)
         self.free_space = list(zip(*obst_map_locs))
-        self.wall_safe_margin = self._wall_safe_margin_value()
-        self.wall_safe_free_space = self._filter_wall_safe_free_space()
-        if len(self.wall_safe_free_space) == 0:
-            self.wall_safe_free_space = list(self.free_space)
 
         # Update duration time
         duration_time = np.random.uniform(low=4.0, high=6.0)

@@ -456,7 +456,8 @@ class QuadrotorDynamics:
             force = np.matmul(self.rot, sum_thr_drag)
             self.acc = [0., 0., -GRAV] + (1.0 / self.mass) * force
 
-    def look_at(self, degrees_down=45.0):
+    def look_at(self):
+        degrees_down = 45.0
         R = self.rot
         # camera slightly below COM
         eye = self.pos + np.matmul(R, [0, 0, -0.02])

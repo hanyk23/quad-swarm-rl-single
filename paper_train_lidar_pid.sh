@@ -32,5 +32,4 @@ exec "$PYTHON_BIN" -m swarm_rl.train \
   --train_for_env_steps="$TRAIN_FOR_ENV_STEPS" \
   --num_workers="$NUM_WORKERS" \
   --num_envs_per_worker="$NUM_ENVS_PER_WORKER" \
-  --quads_use_numba=True \
-  --quads_render=False
+  --quads_use_numba=True

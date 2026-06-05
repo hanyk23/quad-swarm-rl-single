@@ -1,6 +1,7 @@
 # Packaged Models
 
 This directory is the self-contained model bundle extracted from `/home/lzh/drone/quad-swarm-rl-single.zip`.
+The runtime environment/control code in `gym_art/` and `swarm_rl/` has also been synchronized from the same archive, so the model runs against the same simulator/control stack used by the packaged checkpoints.
 
 ## Model
 
@@ -11,6 +12,7 @@ This directory is the self-contained model bundle extracted from `/home/lzh/dron
 - Latest checkpoint: `checkpoint_p0/checkpoint_000008520_8724480.pth`.
 - Best checkpoint: `checkpoint_p0/best_000007350_7526400_reward_50.919.pth`.
 - Runtime parameters are loaded from the extracted `config.json`.
+- Runtime code source: zip `gym_art/` and `swarm_rl/`.
 
 ## Evaluation
 

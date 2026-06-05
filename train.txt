@@ -8,6 +8,9 @@ quad-swarm-packaged-models/paper_single_quad_lidar_pid_best
 /home/lzh/drone/quad-swarm-rl-single.zip
 train_dir/single_quad_obstacles_lidar_wall/single_obstacles_lidar_wall_/00_single_obstacles_lidar_wall_see_0
 
+底层代码来源:
+gym_art/ 和 swarm_rl/ 已按 /home/lzh/drone/quad-swarm-rl-single.zip 覆盖同步
+
 默认 checkpoint:
 latest = checkpoint_000008520_8724480.pth
 
