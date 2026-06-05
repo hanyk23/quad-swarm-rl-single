@@ -29,6 +29,8 @@ def make_quadrotor_env_multi(cfg, render_mode=None, **kwargs):
     velocity_max_xy = cfg.quads_velocity_xy_max
     velocity_max_z = cfg.quads_velocity_z_max
     legacy_velocity_yaw_max_speed = getattr(cfg, "quads_velocity_yaw_max_speed", None)
+    if control_mode == "legacy_velocity_yaw" and legacy_velocity_yaw_max_speed is None:
+        legacy_velocity_yaw_max_speed = 3.0
     if control_mode in ("legacy_velocity_yaw", "velocity_yaw_avoid") and legacy_velocity_yaw_max_speed is not None:
         velocity_max_xy = float(legacy_velocity_yaw_max_speed)
         velocity_max_z = float(legacy_velocity_yaw_max_speed)
