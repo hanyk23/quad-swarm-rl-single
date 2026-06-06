@@ -1,14 +1,9 @@
 import copy
 
-import torch
-from sample_factory.algo.learning.learner import Learner
-from sample_factory.model.actor_critic import create_actor_critic
-
 from gym_art.quadrotor_multi.quad_experience_replay import ExperienceReplayWrapper
 from swarm_rl.env_wrappers.compatibility import QuadEnvCompatibility
 from swarm_rl.env_wrappers.projection_map import ProjectionMapWrapper
 from swarm_rl.env_wrappers.reward_shaping import DEFAULT_QUAD_REWARD_SHAPING, QuadsRewardShapingWrapper
-from swarm_rl.env_wrappers.v_value_map import V_ValueMapWrapper
 
 
 class AnnealSchedule:
@@ -46,6 +41,7 @@ def make_quadrotor_env_multi(cfg, render_mode=None, **kwargs):
         obst_spawn_area=cfg.quads_obst_spawn_area,
         obstacle_scan_resolution=cfg.quads_obstacle_scan_resolution,
         obstacle_obs_type=cfg.quads_obstacle_obs_type,
+        obst_min_clearance=cfg.quads_obst_min_clearance,
 
         # Aerodynamics
         use_downwash=cfg.quads_use_downwash,
@@ -64,6 +60,12 @@ def make_quadrotor_env_multi(cfg, render_mode=None, **kwargs):
         dynamics_randomize_every=dyn_randomize_every, dynamics_change=dynamics_change, dyn_sampler_1=sampler_1,
         sense_noise=sense_noise, init_random_state=False, control_type=cfg.quads_control_type,
         velocity_yaw_max_speed=cfg.quads_velocity_yaw_max_speed,
+        avoid_radius=cfg.quads_avoid_radius, avoid_kp=cfg.quads_avoid_kp,
+        avoid_ki=cfg.quads_avoid_ki, avoid_kd=cfg.quads_avoid_kd,
+        avoid_max_bias=cfg.quads_avoid_max_bias,
+        avoid_floor_guard_z=cfg.quads_avoid_floor_guard_z,
+        avoid_floor_guard_kp=cfg.quads_avoid_floor_guard_kp,
+        avoid_floor_guard_max_vz=cfg.quads_avoid_floor_guard_max_vz,
         # Rendering
         render_mode=render_mode,
     )
@@ -132,18 +134,7 @@ def make_quadrotor_env_multi(cfg, render_mode=None, **kwargs):
     )
 
     if cfg.visualize_v_value:
-        actor_critic = create_actor_critic(cfg, env.observation_space, env.action_space)
-        actor_critic.eval()
-
-        device = torch.device("cpu" if cfg.device == "cpu" else "cuda")
-        actor_critic.model_to_device(device)
-
-        policy_id = cfg.policy_index
-        name_prefix = dict(latest="checkpoint", best="best")[cfg.load_checkpoint_kind]
-        checkpoints = Learner.get_checkpoints(Learner.checkpoint_dir(cfg, policy_id), f"{name_prefix}_*")
-        checkpoint_dict = Learner.load_checkpoint(checkpoints, device)
-        actor_critic.load_state_dict(checkpoint_dict["model"])
-        env = V_ValueMapWrapper(env, actor_critic)
+        raise ValueError("V-value map visualization is not included in this repository.")
 
     return env
 

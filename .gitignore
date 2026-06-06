@@ -3,6 +3,7 @@ gym_art/quadrotor/papers/
 *.pyc
 *.swp
 .idea
+.vscode/
 *.mp4
 _data
 _results_temp

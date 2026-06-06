@@ -254,6 +254,137 @@ class VelocityYawControl(object):
         self.action = np.array(action).copy()
 
 
+class VelocityYawAvoidControl(VelocityYawControl):
+    """
+    Velocity-yaw controller with a local PID-style clearance correction.
+
+    The RL policy still chooses the nominal velocity. This layer only adds a
+    bounded lateral velocity bias when the 3x3 obstacle SDF reports low clearance.
+    """
+    def __init__(self, dynamics, max_speed=3.0, avoid_radius=0.8, avoid_kp=1.4,
+                 avoid_ki=0.15, avoid_kd=0.25, avoid_integral_limit=0.8, avoid_max_bias=1.2,
+                 floor_guard_z=1.2, floor_guard_kp=1.5, floor_guard_max_vz=0.8):
+        super().__init__(dynamics, max_speed=max_speed)
+        self.dynamics = dynamics
+        self.avoid_radius = avoid_radius
+        self.avoid_kp = avoid_kp
+        self.avoid_ki = avoid_ki
+        self.avoid_kd = avoid_kd
+        self.avoid_integral_limit = avoid_integral_limit
+        self.avoid_max_bias = avoid_max_bias
+        self.floor_guard_z = floor_guard_z
+        self.floor_guard_kp = floor_guard_kp
+        self.floor_guard_max_vz = floor_guard_max_vz
+        self.reset()
+
+    def reset(self):
+        self.avoid_integral = np.zeros(2, dtype=np.float64)
+        self.prev_avoid_error = np.zeros(2, dtype=np.float64)
+        self.prev_avoid_active = False
+
+    def _body_yaw_rotation_xy(self):
+        body_x = self.dynamics.rot[:2, 0]
+        norm = np.linalg.norm(body_x)
+        if norm < 1e-6:
+            c, s = 1.0, 0.0
+        else:
+            c, s = body_x[0] / norm, body_x[1] / norm
+        return np.array([[c, -s], [s, c]], dtype=np.float64)
+
+    def _clearance_direction(self, lidar):
+        ray_dirs = np.array([
+            [1.0, 0.0],
+            [0.70710678, 0.70710678],
+            [0.0, 1.0],
+            [-0.70710678, 0.70710678],
+            [-1.0, 0.0],
+            [-0.70710678, -0.70710678],
+            [0.0, -1.0],
+            [0.70710678, -0.70710678],
+        ], dtype=np.float64)
+        ray_dirs = np.matmul(ray_dirs, self._body_yaw_rotation_xy().T)
+        direction = np.zeros(2, dtype=np.float64)
+        for i, dist in enumerate(lidar[:8]):
+            if np.isfinite(dist) and dist < self.avoid_radius:
+                weight = (self.avoid_radius - float(dist)) / max(self.avoid_radius, 1e-6)
+                direction -= ray_dirs[i] * weight
+
+        if np.linalg.norm(direction) < 1e-6:
+            direction = -self.dynamics.vel[:2]
+        if np.linalg.norm(direction) < 1e-6:
+            direction = np.array([1.0, 0.0], dtype=np.float64)
+        return direction / np.linalg.norm(direction)
+
+    def _avoidance_bias(self, observation, dt):
+        if observation is None:
+            self.reset()
+            return np.zeros(3, dtype=np.float64)
+
+        obs = np.asarray(observation).reshape(-1)
+        if obs.size < 9:
+            self.reset()
+            return np.zeros(3, dtype=np.float64)
+
+        lidar = obs[-9:]
+        min_dist = float(np.min(lidar))
+        if not np.isfinite(min_dist) or min_dist >= self.avoid_radius:
+            self.avoid_integral *= 0.8
+            self.prev_avoid_error *= 0.0
+            self.prev_avoid_active = False
+            return np.zeros(3, dtype=np.float64)
+
+        clearance_error = max(0.0, self.avoid_radius - min_dist) / max(self.avoid_radius, 1e-6)
+        error = self._clearance_direction(lidar) * clearance_error
+
+        dt = max(float(dt), 1e-3)
+        derivative = (error - self.prev_avoid_error) / dt if self.prev_avoid_active else np.zeros(2, dtype=np.float64)
+        self.avoid_integral += error * dt
+        self.avoid_integral = np.clip(self.avoid_integral, -self.avoid_integral_limit, self.avoid_integral_limit)
+        self.prev_avoid_error = error
+        self.prev_avoid_active = True
+
+        lateral = self.avoid_kp * error + self.avoid_ki * self.avoid_integral + self.avoid_kd * derivative
+        lateral_norm = np.linalg.norm(lateral)
+        if lateral_norm > self.avoid_max_bias:
+            lateral *= self.avoid_max_bias / lateral_norm
+
+        return np.array([lateral[0], lateral[1], 0.0], dtype=np.float64)
+
+    def _floor_guard_vz(self, dynamics):
+        if dynamics.pos[2] >= self.floor_guard_z:
+            return None
+
+        z_error = max(0.0, self.floor_guard_z - float(dynamics.pos[2]))
+        climb_vz = self.floor_guard_kp * z_error - float(dynamics.vel[2])
+        return float(np.clip(climb_vz, 0.0, self.floor_guard_max_vz))
+
+    def step(self, dynamics, action, goal=None, dt=0.0, observation=None):
+        action = np.asarray(action, dtype=np.float64).copy()
+        action[:3] += self._avoidance_bias(observation, dt)
+        guard_vz = self._floor_guard_vz(dynamics)
+        if guard_vz is not None:
+            action[2] = max(action[2], guard_vz)
+        return super().step(dynamics, action, goal=goal, dt=dt, observation=observation)
+
+
+class BodyFrameVelocityYawAvoidControl(VelocityYawAvoidControl):
+    """
+    Velocity-yaw avoid controller whose policy action uses the quad body-yaw frame.
+
+    action[0:2] are forward/lateral velocity commands in body-yaw XY. They are
+    rotated into world XY before tracking. action[2] remains world vertical speed.
+    """
+    def step(self, dynamics, action, goal=None, dt=0.0, observation=None):
+        body_action = np.asarray(action, dtype=np.float64).copy()
+        world_action = body_action.copy()
+        world_action[:2] = np.matmul(self._body_yaw_rotation_xy(), body_action[:2])
+        world_action[:3] += self._avoidance_bias(observation, dt)
+        guard_vz = self._floor_guard_vz(dynamics)
+        if guard_vz is not None:
+            world_action[2] = max(world_action[2], guard_vz)
+        return VelocityYawControl.step(self, dynamics, world_action, goal=goal, dt=dt, observation=observation)
+
+
 # this is an "oracle" policy to drive the quadrotor towards a goal
 # using the controller from Mellinger et al. 2011
 class NonlinearPositionController(object):

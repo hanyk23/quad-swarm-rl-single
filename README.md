@@ -1,224 +1,147 @@
-# Drone Simulator: QuadSwarm
+# Single Quadrotor Corridor and Lidar RL
 
-A codebase for training reinforcement learning policies for quadrotor swarms.
-Includes:
-* Flight dynamics simulator forked from https://github.com/amolchanov86/gym_art
-and extended to support swarms of quadrotor drones
-* Scripts and the necessary wrappers to facilitate training of control policies with Sample Factory
-https://github.com/alex-petrenko/sample-factory
+本仓库用于训练和评估单无人机障碍物导航策略。项目基于 Sample Factory 和
+`gym_art` 四旋翼动力学，当前保留两条独立实验链：使用局部距离采样的长走廊
+课程学习，以及使用二维模拟激光雷达的机体系避障。`corridor` 表示场景形状，
+不代表雷达传感器。
 
-[//]: # (**Paper:** https://arxiv.org/abs/2109.07735)
+## 当前任务
 
-[//]: # ()
-[//]: # (**Website:** https://sites.google.com/view/swarm-rl)
+仓库保留两组实验：
 
+| 实验 | 用途 | 入口 |
+| --- | --- | --- |
+| `single_quad_corridor_curriculum_v7` | 40 x 10 m 长走廊课程学习，使用 `octomap`/SDF 局部距离采样 | `train_two_stages_corridor.sh` |
+| `single_quad_obstacles_lidar_body_v2` | 机体系观测与机体系速度控制的雷达避障 | `train_single_quad_obstacles_lidar.sh` |
 
-<p align="middle">
+两组实验都使用单无人机、`o_random` 随机航点、柱状障碍物和 APPO，但障碍物观测
+方式不同，checkpoint 不能混用。训练输出位于 `train_dir/`，该目录不会提交到 Git。
 
-<img src="https://github.com/Zhehui-Huang/quad-swarm-rl/blob/master/swarm_rl/gifs/Static_Same_Goal.gif?raw=true" width="45%">
-&emsp;
-<img src="https://github.com/Zhehui-Huang/quad-swarm-rl/blob/master/swarm_rl/gifs/Swarm_vs_Swarm.gif?raw=true" width="45%">
-</p> 
+## 环境安装
 
-<p align="middle">
-<img src="https://github.com/Zhehui-Huang/quad-swarm-rl/blob/master/swarm_rl/gifs/Obstacles_Static_Same_Goal.gif?raw=true" width="45%">
-&emsp;
-<img src="https://github.com/Zhehui-Huang/quad-swarm-rl/blob/master/swarm_rl/gifs/Scale_32_Static_Same_Goal.gif?raw=true" width="45%">
-</p> 
+推荐使用 Python 3.11：
 
-## Installation
-
-Initialize a Python environment, i.e. with `conda` (Python versions >=3.11 are supported):
-
-```
+```bash
 conda create -n swarm-rl python=3.11
 conda activate swarm-rl
-```
-
-Clone and install this repo as an editable Pip package:
-```
-git clone https://github.com/Zhehui-Huang/quad-swarm-rl.git
-cd quad-swarm-rl
 pip install -e .
 ```
 
-This should pull and install all the necessary dependencies including PyTorch.
+测试和可视化需要系统提供 OpenGL。无桌面服务器上可使用 `xvfb-run`。
 
-## Running experiments
+## 两种观测
 
-### Train
+### Corridor
 
-This will run the baseline experiment.
-Change the number of workers appropriately to match the number of logical CPU cores on your machine, but it is advised that
-the total number of simulated environments is close to that in the original command:
+- corridor 是 40 x 10 m 的长条形场景，不是雷达方案。
+- 障碍物观测类型为 `octomap`，实际提供无人机周围 3 x 3 采样点的 SDF 距离。
+- `quads_obstacle_scan_resolution` 控制这 9 个采样点之间的间距。
+- 控制接口使用普通 `velocity_yaw`。
 
-We provide a training script `train.sh`, so you can simply start training by command `bash train.sh`.
+### Lidar
 
-Or, even better, you can use the runner scripts in `swarm_rl/runs/`. These runner scripts (a Sample Factory feature) are Python files that
-contain experiment parameters, and support features such as evaluation on multiple seeds and gridsearches.
+- 雷达观测共 9 维：机身 yaw 坐标系中的 8 个等角度射线距离，以及当前位置到最近
+  障碍物或墙面的 clearance。
+- 射线会与柱体和房间边界求最近交点，不依赖旧版 SDF 采样分辨率。
+- `velocity_yaw_body_avoid` 使用机身 yaw 坐标系水平速度观测和动作，再转换到世界坐标系跟踪。
+- avoid 控制器会叠加 PID 风格的局部避障速度修正和低高度保护。
+- `quads_obst_min_clearance` 控制生成柱体表面之间的最小净空。
 
-To execute a runner script run the following command:
+## 训练
 
-```
-python -m sample_factory.launcher.run --run=swarm_rl.runs.single_quad.single_quad --max_parallel=4 --pause_between=1 --experiments_per_gpu=1 --num_gpus=4
-```
+### 长走廊课程学习
 
-This command will start training four different seeds in parallel on a 4-GPU server. Adjust the parameters accordingly to match
-your hardware setup.
-
-To monitor the experiments, go to the experiment folder, and run the following command:
-
-```
-tensorboard --logdir=./
-```
-### WandB support
-
-If you want to monitor training with WandB, follow the steps below: 
-- setup WandB locally by running `wandb login` in the terminal (https://docs.wandb.ai/quickstart#1.-set-up-wandb).
-* add `--with_wandb=True` in the command.
-
-Here is a total list of wandb settings: 
-```
---with_wandb: Enables Weights and Biases integration (default: False)
---wandb_user: WandB username (entity). Must be specified from command line! Also see https://docs.wandb.ai/quickstart#1.-set-up-wandb (default: None)
---wandb_project: WandB "Project" (default: sample_factory)
---wandb_group: WandB "Group" (to group your experiments). By default this is the name of the env. (default: None)
---wandb_job_type: WandB job type (default: SF)
---wandb_tags: [WANDB_TAGS [WANDB_TAGS ...]] Tags can help with finding experiments in WandB web console (default: [])
+```bash
+bash train_two_stages_corridor.sh
 ```
 
-### Test
-To test the trained model, run the following command:
+阶段一使用障碍物密度为零的 `octomap` 观测进行预热，阶段二在长走廊柱状障碍环境中
+继续使用 `octomap`，并从阶段一 checkpoint 续训。两个阶段共用
+`single_quad_corridor_curriculum_v7` 实验目录。
 
-```
-python -m swarm_rl.enjoy --algo=APPO --env=quadrotor_multi --replay_buffer_sample_prob=0 --quads_use_numba=False --quads_render=True --train_dir=PATH_TO_TRAIN_DIR --experiment=EXPERIMENT_NAME --quads_view_mode CAMERA_VIEWS
-```
-EXPERIMENT_NAME and PATH_TO_TRAIN_DIR can be found in the cfg.json file of your trained model
+### 机体系雷达避障
 
-CAMERA_VIEWS can be any number of views from the following: `[topdown, global, chase, side, corner0, corner1, corner2, corner3, topdownfollow]`
+首次使用当前机体系观测语义训练：
 
-
-## Unit Tests
-
-To run unit tests:
-
-```
-./run_tests.sh
+```bash
+bash train_single_quad_obstacles_lidar.sh retrain
 ```
 
-## Citation
+继续现有阶段二 checkpoint：
 
-If you use this repository in your work or otherwise wish to cite it, please make reference to our following papers.
-
-### QuadSwarm: A Modular Multi-Quadrotor Simulator for Deep Reinforcement Learning with Direct Thrust Control 
-[ICRA Workshop: The Role of Robotics Simulators for Unmanned Aerial Vehicles, 2023](https://imrclab.github.io/workshop-uav-sims-icra2023/)
-
-Drone Simulator for Reinforcement Learning.
-```
-@article{huang2023quadswarm,
-  title={Quadswarm: A modular multi-quadrotor simulator for deep reinforcement learning with direct thrust control},
-  author={Huang, Zhehui and Batra, Sumeet and Chen, Tao and Krupani, Rahul and Kumar, Tushar and Molchanov, Artem and Petrenko, Aleksei and Preiss, James A and Yang, Zhaojing and Sukhatme, Gaurav S},
-  journal={arXiv preprint arXiv:2306.09537},
-  year={2023}
-}
+```bash
+bash train_single_quad_obstacles_lidar.sh resume
 ```
 
-### Sim-to-(Multi)-Real: Transfer of Low-Level Robust Control Policies to Multiple Quadrotors
-IROS 2019
+其他可用模式：
 
-Single drone: a unified control policy adaptable to various types of physical quadrotors.
-```
-@inproceedings{molchanov2019sim,
-  title={Sim-to-(multi)-real: Transfer of low-level robust control policies to multiple quadrotors},
-  author={Molchanov, Artem and Chen, Tao and H{\"o}nig, Wolfgang and Preiss, James A and Ayanian, Nora and Sukhatme, Gaurav S},
-  booktitle={2019 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)},
-  pages={59--66},
-  year={2019},
-  organization={IEEE}
-}
-```
-### Decentralized Control of Quadrotor Swarms with End-to-end Deep Reinforcement Learning
-CoRL 2021
-
-Multiple drones: a decentralized control policy for multiple drones in obstacle free environments.
-```
-@inproceedings{batra21corl,
-  author    = {Sumeet Batra and
-               Zhehui Huang and
-               Aleksei Petrenko and
-               Tushar Kumar and
-               Artem Molchanov and
-               Gaurav S. Sukhatme},
-  title     = {Decentralized Control of Quadrotor Swarms with End-to-end Deep Reinforcement Learning},
-  booktitle = {5th Conference on Robot Learning, CoRL 2021, 8-11 November 2021, London, England, {UK}},
-  series    = {Proceedings of Machine Learning Research},
-  publisher = {{PMLR}},
-  year      = {2021},
-  url       = {https://arxiv.org/abs/2109.07735}
-}
-```
-### Collision Avoidance and Navigation for a Quadrotor Swarm Using End-to-end Deep Reinforcement Learning
-ICRA 2024
-
-Multiple drones: a decentralized control policy for multiple drones in obstacle dense environments.
-```
-@inproceedings{huang2024collision,
-  title={Collision avoidance and navigation for a quadrotor swarm using end-to-end deep reinforcement learning},
-  author={Huang, Zhehui and Yang, Zhaojing and Krupani, Rahul and {\c{S}}enba{\c{s}}lar, Bask{\i}n and Batra, Sumeet and Sukhatme, Gaurav S},
-  booktitle={2024 IEEE International Conference on Robotics and Automation (ICRA)},
-  pages={300--306},
-  year={2024},
-  organization={IEEE}
-}
-```
-### HyperPPO: A scalable method for finding small policies for robotic control
-ICRA 2024
-
-A method to find the smallest control policy for deployment: train once, get tons of models with different size by using HyperNetworks.
-
-We only need four neurons to control a quadrotor! That is super amazing!
-
-Please check following videos for more details:
-- [Square Grid Trajectory](https://www.youtube.com/watch?v=IenGT_TOwGQ&ab_channel=USCRESL)
-- [Bezier Curve Trajectory](https://www.youtube.com/watch?v=B5EpKlD5F68&ab_channel=USCRESL)
-```
-@inproceedings{hegde2024hyperppo,
-  title={Hyperppo: A scalable method for finding small policies for robotic control},
-  author={Hegde, Shashank and Huang, Zhehui and Sukhatme, Gaurav S},
-  booktitle={2024 IEEE International Conference on Robotics and Automation (ICRA)},
-  pages={10821--10828},
-  year={2024},
-  organization={IEEE}
-}
+```text
+stage1          续训阶段一
+stage1-retrain  覆盖并重训阶段一
+stage2          续训阶段二
+two-stage       依次续训阶段一和阶段二
 ```
 
-### Tiny End-to-End Navigation for Quadrotor Swarms
-ICRA 2025 Workshop
+`body_v2` 以前的 checkpoint 使用不同的观测坐标系，不应与当前模型混用。
 
-An end-to-end system for navigating a quadrotor swarm with severely resource-constrained hardware, fully relying on onboard resources for perception, localization, planning, and control.
+## 评估
 
-```
-@article{chiutiny,
-  title={Tiny End-to-End Navigation for Quadrotor Swarms},
-  author={Chiu, Darren and Huang, Zhehui and Ge, Ruohai and Sukhatme, Gaurav S}
-}
-```
+评估长走廊模型：
 
-### Latent Activation Editing: Inference-Time Refinement of Learned Policies for Safer Multirobot Navigation
-Under Review
-
-A novel framwork for inference-time behavior steering of pre-trained robot policies without retraining or fine-tuning.
-```
-@article{das2025latent,
-  title={Latent Activation Editing: Inference-Time Refinement of Learned Policies for Safer Multirobot Navigation},
-  author={Das, Satyajeet and Chiu, Darren and Huang, Zhehui and Lindemann, Lars and Sukhatme, Gaurav S},
-  journal={arXiv preprint arXiv:2509.20623},
-  year={2025}
-}
+```bash
+bash test_single_quad_corridor.sh latest
+bash test_single_quad_corridor.sh best
 ```
 
+评估机体系雷达模型：
 
-### The next paper will appear soon. Hopefully, it will be the end of 2025. That would be a big surprise. 
-### After that paper publish, we will spend more time on the community, including maintain a website to cover more details of using this simulator and open source some important trained models. 
+```bash
+bash test_single_quad_obstacles_lidar.sh latest
+bash test_single_quad_obstacles_lidar.sh best
+```
 
-Github issues and pull requests are welcome.
+评估脚本默认开启 chase 视角和二维投影地图。corridor 评估沿用 checkpoint 中的
+`octomap` 配置；机体系雷达脚本还会显示附近障碍物与墙面点云。
+
+## 测试
+
+```bash
+bash run_tests.sh
+```
+
+测试覆盖雷达射线与墙面距离、障碍物最小间距、机体系观测旋转，以及两条任务共同
+使用的随机航点刷新逻辑。
+
+## 目录结构
+
+```text
+gym_art/quadrotor_multi/              四旋翼动力学、碰撞、雷达、渲染与 o_random 场景
+swarm_rl/env_wrappers/                Sample Factory 环境封装与参数
+swarm_rl/models/                      策略编码器
+swarm_rl/runs/single_quad/            当前实验配置
+train_two_stages_corridor.sh          长走廊两阶段训练
+train_single_quad_obstacles_lidar.sh  机体系雷达训练
+test_single_quad_corridor.sh          长走廊评估
+test_single_quad_obstacles_lidar.sh   机体系雷达评估
+train_dir/                            本地 checkpoint 和日志，Git 忽略
+```
+
+## 关键训练配置
+
+- corridor v7 阶段二：`quads_obstacle_obs_type=octomap`，`quads_obst_density=0.06`，
+  障碍物尺寸随机范围 `0.40-0.45 m`。
+- body v2 阶段一：少量小柱体预热 3M steps。
+- body v2 阶段二：`quads_obstacle_obs_type=lidar`，`quads_obst_density=0.16`，
+  继续训练到 25M steps。
+- `o_random` 到达航点后立即生成新目标；首个目标和后续目标可使用不同成功奖励。
+- best checkpoint 按 episode reward 保存。
+
+训练异常时优先查看 `rewraw_success`、`rewraw_progress` 和
+`rewraw_quadcol_obstacle`，判断成功信号是否被碰撞或速度惩罚覆盖。
+
+## 来源
+
+核心仿真代码源自 [gym_art](https://github.com/amolchanov86/gym-art)，训练框架使用
+[Sample Factory](https://github.com/alex-petrenko/sample-factory)。本仓库已收敛为
+单无人机 corridor 与 lidar 两条研究实验链，不再包含原项目的多机实验、论文绘图和
+Sim2Real 导出工具。

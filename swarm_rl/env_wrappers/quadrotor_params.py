@@ -69,8 +69,27 @@ def add_quadrotors_env_args(env, parser):
     p.add_argument('--quads_room_wall_reward', default=0.0, type=float, help='Penalty for hitting a side wall boundary')
     p.add_argument('--quads_room_ceiling_reward', default=0.0, type=float, help='Penalty for hitting the ceiling boundary')
     p.add_argument('--quads_control_type', default='velocity_yaw', type=str,
-                   choices=['velocity_yaw', 'raw_motor', 'position'],
+                   choices=[
+                       'velocity_yaw', 'velocity_yaw_avoid', 'velocity_yaw_body_avoid',
+                       'raw_motor', 'position',
+                   ],
                    help='Low-level control interface used by the environment')
+    p.add_argument('--quads_avoid_radius', default=0.8, type=float,
+                   help='Clearance radius that activates an avoidance velocity controller')
+    p.add_argument('--quads_avoid_kp', default=1.4, type=float,
+                   help='Proportional gain for avoidance clearance correction')
+    p.add_argument('--quads_avoid_ki', default=0.15, type=float,
+                   help='Integral gain for avoidance clearance correction')
+    p.add_argument('--quads_avoid_kd', default=0.25, type=float,
+                   help='Derivative gain for avoidance clearance correction')
+    p.add_argument('--quads_avoid_max_bias', default=1.2, type=float,
+                   help='Maximum lateral velocity bias added by an avoidance controller')
+    p.add_argument('--quads_avoid_floor_guard_z', default=1.2, type=float,
+                   help='Minimum altitude guarded by an avoidance controller')
+    p.add_argument('--quads_avoid_floor_guard_kp', default=1.5, type=float,
+                   help='Proportional gain for the avoidance low-altitude guard')
+    p.add_argument('--quads_avoid_floor_guard_max_vz', default=0.8, type=float,
+                   help='Maximum upward velocity command from the avoidance low-altitude guard')
 
     # Obstacle
     # # Obstacle Features
@@ -78,11 +97,13 @@ def add_quadrotors_env_args(env, parser):
     p.add_argument('--quads_obstacle_obs_type', default='none', type=str,
                    choices=['none', 'octomap', 'lidar'], help='Choose what kind of obs to send to encoder.')
     p.add_argument('--quads_obst_density', default=0.2, type=float, help='Obstacle density in the map')
-    p.add_argument('--quads_obst_size', default=1.0, type=float, help='The radius of obstacles')
+    p.add_argument('--quads_obst_size', default=1.0, type=float, help='Obstacle pillar diameter')
     p.add_argument('--quads_obst_spawn_area', nargs='+', default=[6.0, 6.0], type=float,
                    help='The spawning area of obstacles')
+    p.add_argument('--quads_obst_min_clearance', default=0.0, type=float,
+                   help='Minimum free distance between obstacle pillar surfaces')
     p.add_argument('--quads_obstacle_scan_resolution', default=0.1, type=float,
-                   help='Resolution used for obstacle SDF samples around the quad')
+                   help='Resolution used for obstacle SDF samples around the quad. Lidar uses ray distances.')
     p.add_argument('--quads_domain_random', default=False, type=str2bool, help='Use domain randomization or not')
     p.add_argument('--quads_obst_density_random', default=False, type=str2bool, help='Enable obstacle density randomization or not')
     p.add_argument('--quads_obst_density_min', default=0.05, type=float,
@@ -118,13 +139,8 @@ def add_quadrotors_env_args(env, parser):
     p.add_argument('--quads_use_numba', default=False, type=str2bool, help='Whether to use numba for jit or not')
 
     # Scenarios
-    p.add_argument('--quads_mode', default='static_same_goal', type=str,
-                   choices=['static_same_goal', 'static_diff_goal', 'dynamic_same_goal', 'dynamic_diff_goal',
-                            'ep_lissajous3D', 'ep_rand_bezier', 'swarm_vs_swarm', 'swap_goals', 'dynamic_formations',
-                            'mix', 'o_uniform_same_goal_spawn', 'o_random',
-                            'o_dynamic_diff_goal', 'o_dynamic_same_goal', 'o_diagonal', 'o_static_same_goal',
-                            'o_static_diff_goal', 'o_swap_goals', 'o_ep_rand_bezier'],
-                   help='Choose which scenario to run. ep = evader pursuit')
+    p.add_argument('--quads_mode', default='o_random', type=str, choices=['o_random'],
+                   help='Random waypoint navigation in the lidar obstacle corridor')
 
     # Room
     p.add_argument('--quads_room_dims', nargs='+', default=[10., 10., 10.], type=float,
@@ -145,7 +161,8 @@ def add_quadrotors_env_args(env, parser):
                    type=str, choices=['topdown', 'chase', 'side', 'global', 'corner0', 'corner1', 'corner2', 'corner3', 'topdownfollow'],
                    help='Choose which kind of view/camera to use')
     p.add_argument('--quads_render', default=False, type=bool, help='Use render or not')
-    p.add_argument('--visualize_v_value', action='store_true', help="Visualize v value map")
+    p.add_argument('--visualize_v_value', action='store_true',
+                   help='Legacy checkpoint option; V-value map visualization is not included')
 
     # Sim2Real
     p.add_argument('--quads_sim2real', default=False, type=str2bool, help='Whether to use sim2real or not')

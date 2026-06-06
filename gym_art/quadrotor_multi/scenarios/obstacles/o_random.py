@@ -46,15 +46,17 @@ class Scenario_o_random(Scenario_o_base):
             env.rew_coeff["success"] = success_reward
 
     def step(self):
+        goal_changed = False
         for i, env in enumerate(self.envs):
             if np.linalg.norm(env.dynamics.pos - self.goals[i]) < self.waypoint_threshold:
                 if not self.first_goal_completed:
                     self.first_goal_completed = True
                     self.set_goal_success_reward(self.goal_success_later)
                 self.goals[i] = self.generate_new_goal_for_agent(i)
+                goal_changed = True
             env.goal = self.goals[i]
 
-        return
+        return goal_changed
 
 
     def reset(self, obst_map=None, cell_centers=None):

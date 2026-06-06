@@ -160,7 +160,10 @@ class QuadrotorSingle:
                  init_random_state=False, sense_noise=None, verbose=False, gravity=GRAV,
                  t2w_std=0.005, t2t_std=0.0005, excite=False, dynamics_simplification=False, use_numba=False,
                  neighbor_obs_type='none', num_agents=1, num_use_neighbor_obs=0, use_obstacles=False,
-                 control_type='velocity_yaw', velocity_yaw_max_speed=3.0):
+                 control_type='velocity_yaw', velocity_yaw_max_speed=3.0,
+                 avoid_radius=0.8, avoid_kp=1.4, avoid_ki=0.15, avoid_kd=0.25,
+                 avoid_max_bias=1.2, avoid_floor_guard_z=1.2, avoid_floor_guard_kp=1.5,
+                 avoid_floor_guard_max_vz=0.8):
         np.seterr(under='ignore')
         """
         Args:
@@ -223,6 +226,14 @@ class QuadrotorSingle:
         self.raw_control_zero_middle = raw_control_zero_middle
         self.control_type = control_type
         self.velocity_yaw_max_speed = velocity_yaw_max_speed
+        self.avoid_radius = avoid_radius
+        self.avoid_kp = avoid_kp
+        self.avoid_ki = avoid_ki
+        self.avoid_kd = avoid_kd
+        self.avoid_max_bias = avoid_max_bias
+        self.avoid_floor_guard_z = avoid_floor_guard_z
+        self.avoid_floor_guard_kp = avoid_floor_guard_kp
+        self.avoid_floor_guard_max_vz = avoid_floor_guard_max_vz
         self.tf_control = tf_control
         self.dynamics_randomize_every = dynamics_randomize_every
         self.verbose = verbose
@@ -319,6 +330,20 @@ class QuadrotorSingle:
         # CONTROL
         if self.control_type == 'velocity_yaw':
             self.controller = VelocityYawControl(self.dynamics, max_speed=self.velocity_yaw_max_speed)
+        elif self.control_type == 'velocity_yaw_avoid':
+            self.controller = VelocityYawAvoidControl(
+                self.dynamics, max_speed=self.velocity_yaw_max_speed,
+                avoid_radius=self.avoid_radius, avoid_kp=self.avoid_kp, avoid_ki=self.avoid_ki,
+                avoid_kd=self.avoid_kd, avoid_max_bias=self.avoid_max_bias,
+                floor_guard_z=self.avoid_floor_guard_z, floor_guard_kp=self.avoid_floor_guard_kp,
+                floor_guard_max_vz=self.avoid_floor_guard_max_vz)
+        elif self.control_type == 'velocity_yaw_body_avoid':
+            self.controller = BodyFrameVelocityYawAvoidControl(
+                self.dynamics, max_speed=self.velocity_yaw_max_speed,
+                avoid_radius=self.avoid_radius, avoid_kp=self.avoid_kp, avoid_ki=self.avoid_ki,
+                avoid_kd=self.avoid_kd, avoid_max_bias=self.avoid_max_bias,
+                floor_guard_z=self.avoid_floor_guard_z, floor_guard_kp=self.avoid_floor_guard_kp,
+                floor_guard_max_vz=self.avoid_floor_guard_max_vz)
         elif self.raw_control:
             if self.dim_mode == '1D':  # Z axis only
                 self.controller = VerticalControl(self.dynamics, zero_action_middle=self.raw_control_zero_middle)
@@ -400,11 +425,12 @@ class QuadrotorSingle:
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
-    def _step(self, action):
+    def _step(self, action, observation=None):
         self.actions[1] = copy.deepcopy(self.actions[0])
         self.actions[0] = copy.deepcopy(action)
 
-        self.controller.step_func(dynamics=self.dynamics, action=action, goal=self.goal, dt=self.dt, observation=None)
+        self.controller.step_func(dynamics=self.dynamics, action=action, goal=self.goal, dt=self.dt,
+                                  observation=observation)
 
         self.time_remain = self.ep_len - self.tick
         reward, rew_info = compute_reward_weighted(
@@ -500,6 +526,8 @@ class QuadrotorSingle:
         self.dynamics.reset()
         self.dynamics.on_floor = False
         self.dynamics.crashed_floor = self.dynamics.crashed_wall = self.dynamics.crashed_ceiling = False
+        if hasattr(self.controller, "reset"):
+            self.controller.reset()
 
         # Reseting some internal state (counters, etc)
         self.tick = 0
@@ -515,5 +543,5 @@ class QuadrotorSingle:
         """This class is only meant to be used as a component of QuadMultiEnv."""
         raise NotImplementedError()
 
-    def step(self, action):
-        return self._step(action)
+    def step(self, action, observation=None):
+        return self._step(action, observation=observation)

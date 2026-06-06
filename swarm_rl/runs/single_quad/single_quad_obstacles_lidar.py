@@ -1,22 +1,59 @@
+import os
+
 from sample_factory.launcher.run_description import RunDescription, Experiment, ParamGrid
 from swarm_rl.runs.single_quad.baseline import QUAD_BASELINE_CLI
 
+_restart_behavior = os.environ.get("QUAD_LIDAR_RESTART_BEHAVIOR", "resume")
+if _restart_behavior not in ("resume", "overwrite"):
+    raise ValueError(
+        "QUAD_LIDAR_RESTART_BEHAVIOR must be either 'resume' or 'overwrite', "
+        f"got {_restart_behavior!r}"
+    )
+
+_stage = os.environ.get("QUAD_LIDAR_STAGE", "stage2")
+if _stage not in ("stage1", "stage2"):
+    raise ValueError(
+        "QUAD_LIDAR_STAGE must be either 'stage1' or 'stage2', "
+        f"got {_stage!r}"
+    )
+
 _params = ParamGrid([
-    ('seed', [0000, 1111, 2222, 3333]),
+    ('seed', [0000]),
 ])
 
-QUAD_OBSTACLE_LIDAR_CLI = QUAD_BASELINE_CLI + (
-    ' --quads_use_obstacles=True --quads_room_dims 12 12 10 --quads_obst_spawn_area 10 10 --quads_obst_density=0.2 '
-    '--quads_obst_size=0.5 --quads_obst_collision_reward=1.0 '
-    '--quads_obstacle_obs_type=lidar --quads_obstacle_scan_resolution=0.25 '
-    '--quads_use_downwash=False --quads_vel_penalty_limit=2.0 --quads_velocity_yaw_max_speed=2.0 '
-    '--quads_mode=o_random --quads_obs_repr=xyz_vxyz_R_omega_wall'
+COMMON_LIDAR_CLI = (
+    ' --quads_use_obstacles=True --quads_room_dims 12 12 10 --quads_obst_spawn_area 10 10 '
+    '--quads_obstacle_obs_type=lidar --quads_obst_min_clearance=0.8 '
+    '--quads_use_downwash=False --quads_vel_penalty_limit=1.6 --quads_velocity_yaw_max_speed=1.2 '
+    '--quads_collision_reward=8.0 --quads_collision_smooth_max_penalty=6.0 '
+    '--quads_progress_reward=0.8 --quads_success_reward=3.0 --quads_first_success_reward=10.0 '
+    '--quads_vel_reward=0.4 --quads_orient_reward=2.0 --quads_spin_reward=0.5 '
+    '--quads_mode=o_random --quads_obs_repr=xyz_vxyz_R_omega_wall '
+    '--quads_control_type=velocity_yaw_body_avoid '
+    '--quads_avoid_radius=1.2 --quads_avoid_kp=1.4 --quads_avoid_ki=0.03 '
+    '--quads_avoid_kd=0.20 --quads_avoid_max_bias=0.7 '
+    '--quads_avoid_floor_guard_z=1.25 --quads_avoid_floor_guard_kp=1.8 '
+    '--quads_avoid_floor_guard_max_vz=0.9 '
 )
 
+STAGE1_CLI = QUAD_BASELINE_CLI + COMMON_LIDAR_CLI + (
+    '--quads_obst_density=0.04 --quads_obst_size=0.30 --quads_obst_collision_reward=4.0 '
+    '--replay_buffer_sample_prob=0.0 --train_for_env_steps=3000000 '
+    f'--restart_behavior={_restart_behavior}'
+)
+
+STAGE2_CLI = QUAD_BASELINE_CLI + COMMON_LIDAR_CLI + (
+    '--quads_obst_density=0.16 --quads_obst_size=0.40 --quads_obst_collision_reward=8.0 '
+    '--replay_buffer_sample_prob=0.25 --train_for_env_steps=25000000 '
+    f'--restart_behavior={_restart_behavior}'
+)
+
+QUAD_OBSTACLE_LIDAR_CLI = dict(stage1=STAGE1_CLI, stage2=STAGE2_CLI)[_stage]
+
 _experiment = Experiment(
-    'single_obstacles_lidar_wall',
+    'single_obstacles_lidar_body_v2',
     QUAD_OBSTACLE_LIDAR_CLI,
     _params.generate_params(randomize=False),
 )
 
-RUN_DESCRIPTION = RunDescription('single_quad_obstacles_lidar_wall', experiments=[_experiment])
+RUN_DESCRIPTION = RunDescription('single_quad_obstacles_lidar_body_v2', experiments=[_experiment])
