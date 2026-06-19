@@ -161,8 +161,9 @@ class QuadrotorSingle:
                  t2w_std=0.005, t2t_std=0.0005, excite=False, dynamics_simplification=False, use_numba=False,
                  neighbor_obs_type='none', num_agents=1, num_use_neighbor_obs=0, use_obstacles=False,
                  control_type='velocity_yaw', velocity_yaw_max_speed=3.0,
-                 avoid_radius=0.8, avoid_kp=1.4, avoid_ki=0.15, avoid_kd=0.25,
-                 avoid_max_bias=1.2, avoid_floor_guard_z=1.2, avoid_floor_guard_kp=1.5,
+                 avoid_radius=0.8, cbf_safe_distance=0.5, cbf_alpha=1.5,
+                 avoid_lidar_filter_alpha=0.35, avoid_activation_hysteresis=0.08,
+                 avoid_floor_guard_z=1.2, avoid_floor_guard_kp=1.5,
                  avoid_floor_guard_max_vz=0.8):
         np.seterr(under='ignore')
         """
@@ -227,10 +228,10 @@ class QuadrotorSingle:
         self.control_type = control_type
         self.velocity_yaw_max_speed = velocity_yaw_max_speed
         self.avoid_radius = avoid_radius
-        self.avoid_kp = avoid_kp
-        self.avoid_ki = avoid_ki
-        self.avoid_kd = avoid_kd
-        self.avoid_max_bias = avoid_max_bias
+        self.cbf_safe_distance = cbf_safe_distance
+        self.cbf_alpha = cbf_alpha
+        self.avoid_lidar_filter_alpha = avoid_lidar_filter_alpha
+        self.avoid_activation_hysteresis = avoid_activation_hysteresis
         self.avoid_floor_guard_z = avoid_floor_guard_z
         self.avoid_floor_guard_kp = avoid_floor_guard_kp
         self.avoid_floor_guard_max_vz = avoid_floor_guard_max_vz
@@ -333,15 +334,17 @@ class QuadrotorSingle:
         elif self.control_type == 'velocity_yaw_avoid':
             self.controller = VelocityYawAvoidControl(
                 self.dynamics, max_speed=self.velocity_yaw_max_speed,
-                avoid_radius=self.avoid_radius, avoid_kp=self.avoid_kp, avoid_ki=self.avoid_ki,
-                avoid_kd=self.avoid_kd, avoid_max_bias=self.avoid_max_bias,
+                avoid_radius=self.avoid_radius, cbf_safe_distance=self.cbf_safe_distance,
+                cbf_alpha=self.cbf_alpha, lidar_filter_alpha=self.avoid_lidar_filter_alpha,
+                activation_hysteresis=self.avoid_activation_hysteresis,
                 floor_guard_z=self.avoid_floor_guard_z, floor_guard_kp=self.avoid_floor_guard_kp,
                 floor_guard_max_vz=self.avoid_floor_guard_max_vz)
         elif self.control_type == 'velocity_yaw_body_avoid':
             self.controller = BodyFrameVelocityYawAvoidControl(
                 self.dynamics, max_speed=self.velocity_yaw_max_speed,
-                avoid_radius=self.avoid_radius, avoid_kp=self.avoid_kp, avoid_ki=self.avoid_ki,
-                avoid_kd=self.avoid_kd, avoid_max_bias=self.avoid_max_bias,
+                avoid_radius=self.avoid_radius, cbf_safe_distance=self.cbf_safe_distance,
+                cbf_alpha=self.cbf_alpha, lidar_filter_alpha=self.avoid_lidar_filter_alpha,
+                activation_hysteresis=self.avoid_activation_hysteresis,
                 floor_guard_z=self.avoid_floor_guard_z, floor_guard_kp=self.avoid_floor_guard_kp,
                 floor_guard_max_vz=self.avoid_floor_guard_max_vz)
         elif self.raw_control:

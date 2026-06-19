@@ -9,21 +9,37 @@ cd "$(dirname "$0")"
 
 echo "开始测试单无人机模拟激光雷达避障任务..."
 
-EXPERIMENT_PATH="single_quad_obstacles_lidar_body_v2/single_obstacles_lidar_body_v2_/00_single_obstacles_lidar_body_v2_see_0/"
 CHECKPOINT_KIND="${1:-latest}"
+EXPERIMENT_VERSION="${2:-v6}"
 
 case "${CHECKPOINT_KIND}" in
   latest|best)
     ;;
   -h|--help|help)
-    echo "用法: bash test_single_quad_obstacles_lidar.sh [latest|best]"
+    echo "用法: bash test_single_quad_obstacles_lidar.sh [latest|best] [v6|v5]"
     echo "  latest  默认，测试最新 checkpoint"
     echo "  best    测试 reward 最好的 checkpoint"
+    echo "  v6      默认，测试独立微调实验"
+    echo "  v5      测试旧 v5 实验"
     exit 0
     ;;
   *)
     echo "未知 checkpoint 类型: ${CHECKPOINT_KIND}"
-    echo "用法: bash test_single_quad_obstacles_lidar.sh [latest|best]"
+    echo "用法: bash test_single_quad_obstacles_lidar.sh [latest|best] [v6|v5]"
+    exit 2
+    ;;
+esac
+
+case "${EXPERIMENT_VERSION}" in
+  v6)
+    EXPERIMENT_PATH="single_quad_obstacles_lidar_body_cbf_v6/single_obstacles_lidar_body_cbf_v6_/00_single_obstacles_lidar_body_cbf_v6_see_0/"
+    ;;
+  v5)
+    EXPERIMENT_PATH="single_quad_obstacles_lidar_body_cbf_v5/single_obstacles_lidar_body_cbf_v5_/00_single_obstacles_lidar_body_cbf_v5_see_0/"
+    ;;
+  *)
+    echo "未知实验版本: ${EXPERIMENT_VERSION}"
+    echo "用法: bash test_single_quad_obstacles_lidar.sh [latest|best] [v6|v5]"
     exit 2
     ;;
 esac
@@ -42,7 +58,7 @@ python -m swarm_rl.enjoy \
   --quads_render=True \
   --quads_episode_duration=45.0 \
   --visualize_projection_map=True \
-  --visualize_obstacle_point_cloud=True \
+  --visualize_obstacle_point_cloud=False \
   --quads_vel_penalty_limit=1.6 \
   --quads_velocity_yaw_max_speed=1.2 \
   --train_dir=./train_dir \

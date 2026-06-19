@@ -44,7 +44,7 @@ class QuadsRewardShapingWrapper(gym.Wrapper, TrainingInfoInterface, RewardShapin
         self.reward_shaping_scheme = dict(quad_rewards=dict())
         self.reward_shaping_updated = True
 
-    def reset(self):
+    def reset(self, *, seed=None, options=None):
         if self.reward_shaping_updated:
             env_reward_shaping = self.env.unwrapped.rew_coeff
             for key, weight in self.reward_shaping_scheme['quad_rewards'].items():
@@ -126,9 +126,9 @@ class QuadsRewardShapingWrapper(gym.Wrapper, TrainingInfoInterface, RewardShapin
                     # annealing from 0.0 to final value
                     for anneal_schedule in self.annealing:
                         coeff_name = anneal_schedule.coeff_name
-                        final_value = anneal_schedule.final_value
-                        anneal_steps = anneal_schedule.anneal_env_steps
-                        env_reward_shaping[coeff_name] = min(final_value * approx_total_training_steps / anneal_steps, final_value)
+                        env_reward_shaping[coeff_name] = anneal_schedule.value_at(
+                            approx_total_training_steps
+                        )
                         extra_stats[f'z_anneal_{coeff_name}'] = env_reward_shaping[coeff_name]
 
         if any(dones_multi):

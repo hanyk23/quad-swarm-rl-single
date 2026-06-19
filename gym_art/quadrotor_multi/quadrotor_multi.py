@@ -38,9 +38,11 @@ class QuadrotorEnvMulti(gym.Env):
                  dynamics_randomize_every, dynamics_change, dyn_sampler_1,
                  sense_noise, init_random_state,
                  obst_min_clearance=0.0,
+                 lidar_sector_angle=0.0, lidar_sector_samples=1,
                  control_type='velocity_yaw', velocity_yaw_max_speed=3.0,
-                 avoid_radius=0.8, avoid_kp=1.4, avoid_ki=0.15, avoid_kd=0.25,
-                 avoid_max_bias=1.2, avoid_floor_guard_z=1.2, avoid_floor_guard_kp=1.5,
+                 avoid_radius=0.8, cbf_safe_distance=0.5, cbf_alpha=1.5,
+                 avoid_lidar_filter_alpha=0.35, avoid_activation_hysteresis=0.08,
+                 avoid_floor_guard_z=1.2, avoid_floor_guard_kp=1.5,
                  avoid_floor_guard_max_vz=0.8,
                  # Rendering
                  render_mode='human'
@@ -78,8 +80,9 @@ class QuadrotorEnvMulti(gym.Env):
                 # Obstacle
                 use_obstacles=use_obstacles,
                 control_type=control_type, velocity_yaw_max_speed=velocity_yaw_max_speed,
-                avoid_radius=avoid_radius, avoid_kp=avoid_kp, avoid_ki=avoid_ki,
-                avoid_kd=avoid_kd, avoid_max_bias=avoid_max_bias,
+                avoid_radius=avoid_radius, cbf_safe_distance=cbf_safe_distance,
+                cbf_alpha=cbf_alpha, avoid_lidar_filter_alpha=avoid_lidar_filter_alpha,
+                avoid_activation_hysteresis=avoid_activation_hysteresis,
                 avoid_floor_guard_z=avoid_floor_guard_z, avoid_floor_guard_kp=avoid_floor_guard_kp,
                 avoid_floor_guard_max_vz=avoid_floor_guard_max_vz,
             )
@@ -146,6 +149,8 @@ class QuadrotorEnvMulti(gym.Env):
             self.obst_min_clearance = obst_min_clearance
             self.obstacle_scan_resolution = obstacle_scan_resolution
             self.obstacle_obs_type = obstacle_obs_type
+            self.lidar_sector_angle = lidar_sector_angle
+            self.lidar_sector_samples = lidar_sector_samples
 
             # Log more info
             self.distance_to_goal_3_5 = 0
@@ -393,6 +398,8 @@ class QuadrotorEnvMulti(gym.Env):
                 resolution=self.obstacle_scan_resolution,
                 room_dims=self.room_dims,
                 include_room_bounds=self.obstacle_obs_type == "lidar",
+                lidar_sector_angle=self.lidar_sector_angle,
+                lidar_sector_samples=self.lidar_sector_samples,
             )
             self.obst_map, obst_pos_arr, cell_centers = self.obst_generation_given_density()
             if hasattr(self.scenario, "goal_success_first"):

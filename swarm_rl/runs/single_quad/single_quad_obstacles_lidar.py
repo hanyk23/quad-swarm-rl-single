@@ -17,6 +17,13 @@ if _stage not in ("stage1", "stage2"):
         f"got {_stage!r}"
     )
 
+_checkpoint_kind = os.environ.get("QUAD_LIDAR_CHECKPOINT_KIND", "latest")
+if _checkpoint_kind not in ("latest", "best"):
+    raise ValueError(
+        "QUAD_LIDAR_CHECKPOINT_KIND must be either 'latest' or 'best', "
+        f"got {_checkpoint_kind!r}"
+    )
+
 _params = ParamGrid([
     ('seed', [0000]),
 ])
@@ -24,16 +31,18 @@ _params = ParamGrid([
 COMMON_LIDAR_CLI = (
     ' --quads_use_obstacles=True --quads_room_dims 12 12 10 --quads_obst_spawn_area 10 10 '
     '--quads_obstacle_obs_type=lidar --quads_obst_min_clearance=0.8 '
+    '--quads_lidar_sector_angle=30.0 --quads_lidar_sector_samples=5 '
     '--quads_use_downwash=False --quads_vel_penalty_limit=1.6 --quads_velocity_yaw_max_speed=1.2 '
     '--quads_collision_reward=8.0 --quads_collision_smooth_max_penalty=6.0 '
     '--quads_progress_reward=0.8 --quads_success_reward=3.0 --quads_first_success_reward=10.0 '
     '--quads_vel_reward=0.4 --quads_orient_reward=2.0 --quads_spin_reward=0.5 '
     '--quads_mode=o_random --quads_obs_repr=xyz_vxyz_R_omega_wall '
     '--quads_control_type=velocity_yaw_body_avoid '
-    '--quads_avoid_radius=1.2 --quads_avoid_kp=1.4 --quads_avoid_ki=0.03 '
-    '--quads_avoid_kd=0.20 --quads_avoid_max_bias=0.7 '
+    '--quads_avoid_radius=1.0 --quads_cbf_safe_distance=0.3 --quads_cbf_alpha=2.0 '
+    '--quads_avoid_lidar_filter_alpha=0.35 --quads_avoid_activation_hysteresis=0.08 '
     '--quads_avoid_floor_guard_z=1.25 --quads_avoid_floor_guard_kp=1.8 '
     '--quads_avoid_floor_guard_max_vz=0.9 '
+    f'--load_checkpoint_kind={_checkpoint_kind} '
 )
 
 STAGE1_CLI = QUAD_BASELINE_CLI + COMMON_LIDAR_CLI + (
@@ -51,9 +60,9 @@ STAGE2_CLI = QUAD_BASELINE_CLI + COMMON_LIDAR_CLI + (
 QUAD_OBSTACLE_LIDAR_CLI = dict(stage1=STAGE1_CLI, stage2=STAGE2_CLI)[_stage]
 
 _experiment = Experiment(
-    'single_obstacles_lidar_body_v2',
+    'single_obstacles_lidar_body_cbf_v5',
     QUAD_OBSTACLE_LIDAR_CLI,
     _params.generate_params(randomize=False),
 )
 
-RUN_DESCRIPTION = RunDescription('single_quad_obstacles_lidar_body_v2', experiments=[_experiment])
+RUN_DESCRIPTION = RunDescription('single_quad_obstacles_lidar_body_cbf_v5', experiments=[_experiment])

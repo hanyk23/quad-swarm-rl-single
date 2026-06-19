@@ -52,8 +52,14 @@ def test_get_lidar_rays_with_bounds():
         room_dims=np.array([12., 12.]),
         ray_rotations=identity_rotations,
     )
-    true_res = np.array([[6., 6. * np.sqrt(2.), 6., 6. * np.sqrt(2.),
-                          6., 6. * np.sqrt(2.), 6., 6. * np.sqrt(2.), 6.]])
+    ray_angles = 2.0 * np.pi * np.arange(9) / 9.0
+    true_res = np.array([[
+        min(
+            6.0 / abs(np.cos(angle)) if abs(np.cos(angle)) > 1e-8 else 100.0,
+            6.0 / abs(np.sin(angle)) if abs(np.sin(angle)) > 1e-8 else 100.0,
+        )
+        for angle in ray_angles
+    ]])
     assert np.allclose(test_res, true_res, atol=1e-5)
 
     near_wall_obs = 100 * np.ones((1, 9))
@@ -66,7 +72,7 @@ def test_get_lidar_rays_with_bounds():
         ray_rotations=identity_rotations,
     )
     assert np.isclose(near_wall_res[0, 0], 0.5, atol=1e-5)
-    assert np.isclose(near_wall_res[0, 8], 0.5, atol=1e-5)
+    assert near_wall_res[0, 8] > 0.5
 
     yaw_90_obs = 100 * np.ones((1, 9))
     yaw_90_rotations = np.array([[[0., -1.], [1., 0.]]])
@@ -79,7 +85,46 @@ def test_get_lidar_rays_with_bounds():
         ray_rotations=yaw_90_rotations,
     )
     assert np.isclose(yaw_90_res[0, 0], 6.0, atol=1e-5)
-    assert np.isclose(yaw_90_res[0, 6], 0.5, atol=1e-5)
+    assert np.min(yaw_90_res) > 0.5
+    assert np.min(yaw_90_res) < 0.6
+
+    obstacle_angle = np.deg2rad(15.0)
+    offset_obstacle = np.array([[2.0 * np.cos(obstacle_angle), 2.0 * np.sin(obstacle_angle)]])
+    single_ray_res = get_lidar_rays_with_bounds(
+        quad_poses=quad_poses,
+        obst_poses=offset_obstacle,
+        lidar_obs=100 * np.ones((1, 9)),
+        obst_radius=0.1,
+        room_dims=np.array([12., 12.]),
+        ray_rotations=identity_rotations,
+    )
+    sector_res = get_lidar_rays_with_bounds(
+        quad_poses=quad_poses,
+        obst_poses=offset_obstacle,
+        lidar_obs=100 * np.ones((1, 9)),
+        obst_radius=0.1,
+        room_dims=np.array([12., 12.]),
+        ray_rotations=identity_rotations,
+        sector_angle=np.deg2rad(30.0),
+        sector_samples=5,
+    )
+    assert single_ray_res[0, 0] > 5.0
+    assert np.isclose(sector_res[0, 0], 1.9, atol=1e-5)
+
+    ninth_sector_angle = 2.0 * np.pi * 8.0 / 9.0
+    ninth_sector_obstacle = np.array([[
+        2.0 * np.cos(ninth_sector_angle),
+        2.0 * np.sin(ninth_sector_angle),
+    ]])
+    ninth_sector_res = get_lidar_rays_with_bounds(
+        quad_poses=quad_poses,
+        obst_poses=ninth_sector_obstacle,
+        lidar_obs=100 * np.ones((1, 9)),
+        obst_radius=0.1,
+        room_dims=np.array([12., 12.]),
+        ray_rotations=identity_rotations,
+    )
+    assert np.isclose(ninth_sector_res[0, 8], 1.9, atol=1e-5)
     return
 
 

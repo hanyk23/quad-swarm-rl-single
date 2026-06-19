@@ -75,15 +75,23 @@ def add_quadrotors_env_args(env, parser):
                    ],
                    help='Low-level control interface used by the environment')
     p.add_argument('--quads_avoid_radius', default=0.8, type=float,
-                   help='Clearance radius that activates an avoidance velocity controller')
+                   help='Lidar distance that activates CBF-QP velocity constraints')
+    p.add_argument('--quads_cbf_safe_distance', default=0.5, type=float,
+                   help='Minimum obstacle surface distance enforced by the CBF-QP safety filter')
+    p.add_argument('--quads_cbf_alpha', default=1.5, type=float,
+                   help='CBF class-K gain controlling how quickly safe clearance may decrease')
+    p.add_argument('--quads_avoid_lidar_filter_alpha', default=0.35, type=float,
+                   help='EMA update weight for lidar distances used by the CBF filter')
+    p.add_argument('--quads_avoid_activation_hysteresis', default=0.08, type=float,
+                   help='Extra clearance required before an active CBF constraint is disabled')
     p.add_argument('--quads_avoid_kp', default=1.4, type=float,
-                   help='Proportional gain for avoidance clearance correction')
+                   help='Deprecated PID setting retained for old checkpoint compatibility')
     p.add_argument('--quads_avoid_ki', default=0.15, type=float,
-                   help='Integral gain for avoidance clearance correction')
+                   help='Deprecated PID setting retained for old checkpoint compatibility')
     p.add_argument('--quads_avoid_kd', default=0.25, type=float,
-                   help='Derivative gain for avoidance clearance correction')
+                   help='Deprecated PID setting retained for old checkpoint compatibility')
     p.add_argument('--quads_avoid_max_bias', default=1.2, type=float,
-                   help='Maximum lateral velocity bias added by an avoidance controller')
+                   help='Deprecated PID setting retained for old checkpoint compatibility')
     p.add_argument('--quads_avoid_floor_guard_z', default=1.2, type=float,
                    help='Minimum altitude guarded by an avoidance controller')
     p.add_argument('--quads_avoid_floor_guard_kp', default=1.5, type=float,
@@ -104,6 +112,10 @@ def add_quadrotors_env_args(env, parser):
                    help='Minimum free distance between obstacle pillar surfaces')
     p.add_argument('--quads_obstacle_scan_resolution', default=0.1, type=float,
                    help='Resolution used for obstacle SDF samples around the quad. Lidar uses ray distances.')
+    p.add_argument('--quads_lidar_sector_angle', default=0.0, type=float,
+                   help='Angular width in degrees represented by each lidar direction.')
+    p.add_argument('--quads_lidar_sector_samples', default=1, type=int,
+                   help='Number of rays sampled inside each lidar sector.')
     p.add_argument('--quads_domain_random', default=False, type=str2bool, help='Use domain randomization or not')
     p.add_argument('--quads_obst_density_random', default=False, type=str2bool, help='Enable obstacle density randomization or not')
     p.add_argument('--quads_obst_density_min', default=0.05, type=float,
@@ -155,6 +167,8 @@ def add_quadrotors_env_args(env, parser):
     p.add_argument('--anneal_collision_steps', default=0.0, type=float, help='Anneal collision penalties over this '
                                                                              'many steps. Default (0.0) is no '
                                                                              'annealing')
+    p.add_argument('--anneal_collision_initial_ratio', default=0.0, type=float,
+                   help='Initial fraction of collision and velocity penalty weights during annealing')
 
     # Rendering
     p.add_argument('--quads_view_mode', nargs='+', default=['topdown', 'chase', 'global'],
