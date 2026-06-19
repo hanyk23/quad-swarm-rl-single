@@ -4,7 +4,7 @@
 Sample Factory/APPO 训练框架，当前主要维护两条实验线：
 
 - `corridor`：长走廊课程学习，使用局部 SDF/octomap 距离采样。
-- `lidar body CBF`：二维模拟激光雷达、机体系速度控制和 CBF-QP 安全过滤。
+- `lidar body CBF`：9 个机体系方向扇区雷达、机体系速度控制和 CBF-QP 安全过滤。
 
 仓库中的训练脚本、评估脚本和测试都围绕这两条链路组织。`train_dir/` 是本地训练输出目录，
 默认不提交；当前也提供了 `train_dir.zip` 用于保存已有训练结果快照。
@@ -115,7 +115,7 @@ bash train_single_quad_obstacles_lidar_v6.sh resume
 
 ```text
 gym_art/quadrotor_multi/              四旋翼动力学、碰撞、障碍物、雷达和渲染
-gym_art/quadrotor_multi/obstacles/    柱状障碍物生成、射线检测和单元测试
+gym_art/quadrotor_multi/obstacles/    柱状障碍物生成、扇区雷达子射线检测和单元测试
 swarm_rl/env_wrappers/                Sample Factory 环境封装、参数和 reward shaping
 swarm_rl/models/                      策略网络和注意力层
 swarm_rl/runs/single_quad/            单无人机实验配置
@@ -141,8 +141,9 @@ TRAINING_IMPROVEMENTS.md              本轮训练和控制改进记录
 
 ### 2. 九方向扇区雷达
 
-当前雷达观测是 9 维，每一维对应一个机身 yaw 坐标系方向。9 个方向每隔 40 度布置，
-每个方向不是单条中心射线，而是一个小扇区：
+当前雷达观测是 9 维，也就是 9 个机身 yaw 坐标系方向扇区。9 个方向每隔 40 度布置，
+每一维都表示对应扇区内最近的障碍物或墙面距离；它不是旧版“8 条中心射线 + 1 个全局
+clearance”的结构。每个方向也不是单条中心射线，而是一个小扇区：
 
 - 扇区角度默认 `30.0` 度。
 - 每个扇区采样 `5` 条子射线。
