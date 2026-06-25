@@ -1,33 +1,49 @@
 #!/bin/bash
 
 # ==============================================================================
-# 单无人机模拟激光雷达避障测试脚本
+# 单无人机模拟激光雷达避障评估脚本
+# 默认评估 v6 latest checkpoint，可通过参数切换 checkpoint/版本/episode 数/设备。
 # ==============================================================================
 
 set -e
 cd "$(dirname "$0")"
 
-echo "开始评估单无人机模拟激光雷达避障任务..."
-
 CHECKPOINT_KIND="${1:-latest}"
 EXPERIMENT_VERSION="${2:-v6}"
 NUM_EPISODES="${3:-50}"
+DEVICE="${4:-cpu}"
+
+case "${DEVICE}" in
+  cpu)
+    EVAL_DEVICE="cpu"
+    ;;
+  gpu|cuda)
+    EVAL_DEVICE="gpu"
+    ;;
+  *)
+    echo "未知设备类型: ${DEVICE}"
+    echo "用法: bash eval_single_quad_obstacles_lidar.sh [latest|best] [v6|v5] [episodes] [cpu|gpu]"
+    exit 2
+    ;;
+esac
 
 case "${CHECKPOINT_KIND}" in
   latest|best)
     ;;
   -h|--help|help)
-    echo "用法: bash test_single_quad_obstacles_lidar.sh [latest|best] [v6|v5] [episodes]"
-    echo "  latest  默认，测试最新 checkpoint"
-    echo "  best    测试 reward 最好的 checkpoint"
-    echo "  v6      默认，测试独立微调实验"
-    echo "  v5      测试旧 v5 实验"
+    echo "用法: bash eval_single_quad_obstacles_lidar.sh [latest|best] [v6|v5] [episodes] [cpu|gpu]"
+    echo "  latest   默认，评估最新 checkpoint"
+    echo "  best     评估 reward 最好的 checkpoint"
+    echo "  v6       默认，评估独立微调实验"
+    echo "  v5       评估旧 v5 实验"
     echo "  episodes 默认 50，确定性评估 episode 数"
+    echo "  cpu      默认，使用 CPU 评估"
+    echo "  gpu      使用 CUDA/GPU 评估"
     exit 0
     ;;
   *)
     echo "未知 checkpoint 类型: ${CHECKPOINT_KIND}"
-    echo "用法: bash test_single_quad_obstacles_lidar.sh [latest|best] [v6|v5] [episodes]"
+    echo "用法: bash eval_single_quad_obstacles_lidar.sh [latest|best] [v6|v5] [episodes] [cpu|gpu]"
     exit 2
     ;;
 esac
@@ -41,7 +57,7 @@ case "${EXPERIMENT_VERSION}" in
     ;;
   *)
     echo "未知实验版本: ${EXPERIMENT_VERSION}"
-    echo "用法: bash test_single_quad_obstacles_lidar.sh [latest|best] [v6|v5] [episodes]"
+    echo "用法: bash eval_single_quad_obstacles_lidar.sh [latest|best] [v6|v5] [episodes] [cpu|gpu]"
     exit 2
     ;;
 esac
@@ -52,7 +68,9 @@ if [ ! -f "train_dir/${EXPERIMENT_PATH}/config.json" ]; then
   exit 1
 fi
 
-python -m swarm_rl.evaluate \
+echo "开始评估：checkpoint=${CHECKPOINT_KIND}, version=${EXPERIMENT_VERSION}, episodes=${NUM_EPISODES}, device=${EVAL_DEVICE}"
+
+conda run -n swarm-rl python -m swarm_rl.evaluate \
   --algo=APPO \
   --env=quadrotor_multi \
   --replay_buffer_sample_prob=0 \
@@ -71,6 +89,7 @@ python -m swarm_rl.evaluate \
   --eval_output_dir=./eval_results \
   --eval_success_time_limit_s=45.0 \
   --eval_success_max_path_ratio=3.0 \
-  --eval_success_max_path_length_m=18.0
+  --eval_success_max_path_length_m=18.0 \
+  --device="${EVAL_DEVICE}"
 
-echo "评估结束！"
+echo "评估结束。"

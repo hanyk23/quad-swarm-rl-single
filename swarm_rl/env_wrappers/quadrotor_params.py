@@ -152,7 +152,7 @@ def add_quadrotors_env_args(env, parser):
 
     # Scenarios
     p.add_argument('--quads_mode', default='o_random', type=str, choices=['o_random'],
-                   help='Random waypoint navigation in the lidar obstacle corridor')
+                   help='Random waypoint navigation in the lidar obstacle field')
 
     # Room
     p.add_argument('--quads_room_dims', nargs='+', default=[10., 10., 10.], type=float,
@@ -177,6 +177,18 @@ def add_quadrotors_env_args(env, parser):
     p.add_argument('--quads_render', default=False, type=bool, help='Use render or not')
     p.add_argument('--visualize_v_value', action='store_true',
                    help='Legacy checkpoint option; V-value map visualization is not included')
+
+    # Evaluation
+    p.add_argument('--eval_num_episodes', default=50, type=int,
+                   help='Number of deterministic episodes for obstacle traversal evaluation')
+    p.add_argument('--eval_output_dir', default='eval_results', type=str,
+                   help='Directory where obstacle traversal evaluation writes JSON and CSV summaries')
+    p.add_argument('--eval_success_time_limit_s', default=45.0, type=float,
+                   help='Maximum flight time for a successful obstacle traversal episode')
+    p.add_argument('--eval_success_max_path_ratio', default=3.0, type=float,
+                   help='Maximum path length divided by straight-line start-goal distance for success')
+    p.add_argument('--eval_success_max_path_length_m', default=18.0, type=float,
+                   help='Absolute path length cap for success in the 10 m room obstacle task')
 
     # Sim2Real
     p.add_argument('--quads_sim2real', default=False, type=str2bool, help='Whether to use sim2real or not')

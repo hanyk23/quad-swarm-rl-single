@@ -24,7 +24,7 @@ pip_packages = [
 setup(
     name='swarm_rl',
     version='1.0.0',
-    description='Single-quadrotor corridor and lidar reinforcement learning',
+    description='Single-quadrotor lidar obstacle traversal reinforcement learning',
     long_description=long_description,
     long_description_content_type='text/markdown',
     packages=find_packages(where='.'),

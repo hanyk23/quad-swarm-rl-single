@@ -1,17 +1,14 @@
 # Quad Swarm RL Single
 
-本仓库是一个面向单无人机障碍物导航的强化学习实验工程。代码基于 `gym_art` 四旋翼动力学和
-Sample Factory/APPO 训练框架，当前主要维护两条实验线：
+本仓库维护一个单无人机激光雷达避障穿越任务。仿真基于 `gym_art` 四旋翼动力学，训练使用
+Sample Factory/APPO。当前保留的主线是 `lidar body CBF`：策略接收机体系 9 方向扇区雷达，
+输出机体系速度指令，低层通过 CBF-QP 安全过滤器限制朝障碍物的不安全速度分量。
 
-- `corridor`：长走廊课程学习，使用局部 SDF/octomap 距离采样。
-- `lidar body CBF`：9 个机体系方向扇区雷达、机体系速度控制和 CBF-QP 安全过滤。
-
-仓库中的训练脚本、评估脚本和测试都围绕这两条链路组织。`train_dir/` 是本地训练输出目录，
-默认不提交；当前也提供了 `train_dir.zip` 用于保存已有训练结果快照。
+评估目标不是确认脚本能跑完，而是判断无人机能否持续穿过随机柱状障碍场并到达连续目标点。
 
 ## 环境安装
 
-推荐使用 Python 3.11：
+推荐 Python 3.11：
 
 ```bash
 conda create -n swarm-rl python=3.11
@@ -19,20 +16,14 @@ conda activate swarm-rl
 pip install -e .
 ```
 
-可视化和部分测试依赖 OpenGL。没有桌面的服务器上可以通过 `xvfb-run` 运行评估或测试命令。
+可视化和部分测试依赖 OpenGL。无桌面服务器上如需渲染，可用 `xvfb-run` 包裹命令。
 
 ## 快速使用
 
-运行全部测试：
+运行单元测试和编译检查：
 
 ```bash
 bash run_tests.sh
-```
-
-训练长走廊课程学习任务：
-
-```bash
-bash train_two_stages_corridor.sh
 ```
 
 从 v5 best checkpoint 创建独立 v6 雷达避障微调实验，并开始训练：
@@ -41,46 +32,29 @@ bash train_two_stages_corridor.sh
 bash train_single_quad_obstacles_lidar.sh
 ```
 
-继续已有 v6 雷达避障实验：
+继续已有 v6 实验：
 
 ```bash
 bash train_single_quad_obstacles_lidar.sh resume-v6
 ```
 
-评估长走廊模型：
-
-```bash
-bash test_single_quad_corridor.sh latest
-bash test_single_quad_corridor.sh best
-```
-
-评估雷达避障模型：
+确定性评估 v6 latest checkpoint，默认 50 个 episode：
 
 ```bash
 bash test_single_quad_obstacles_lidar.sh latest v6
-bash test_single_quad_obstacles_lidar.sh best v6
 ```
+
+评估 best checkpoint，并指定 100 个 episode：
+
+```bash
+bash test_single_quad_obstacles_lidar.sh best v6 100
+```
+
+手动可视化策略时仍可直接使用 `swarm_rl.enjoy`，但正式结果以 `swarm_rl.evaluate` 输出为准。
 
 ## 训练入口
 
-### Corridor
-
-```bash
-bash train_two_stages_corridor.sh
-```
-
-该脚本执行长走廊两阶段课程学习：
-
-- 阶段一在低难度环境中预热策略。
-- 阶段二切换到带柱状障碍物的长走廊环境。
-- 障碍物观测类型为 `octomap`，实际是无人机附近 3 x 3 局部 SDF 距离采样。
-- 控制类型使用普通 `velocity_yaw`。
-
-实验目录为 `train_dir/single_quad_corridor_curriculum_v7/...`。
-
-### Lidar Body CBF
-
-主入口是：
+主入口：
 
 ```bash
 bash train_single_quad_obstacles_lidar.sh [mode]
@@ -92,16 +66,16 @@ bash train_single_quad_obstacles_lidar.sh [mode]
 | --- | --- |
 | `finetune-v6` | 默认模式，从 v5 best 创建 v6 并微调 |
 | `resume-v6` | 继续最新 v6 checkpoint |
+| `resume` | 继续旧 v5 最新阶段二 checkpoint |
 | `retrain` | 覆盖并完整重训 v5 阶段一和阶段二 |
-| `resume` | 继续旧 v5 阶段二 |
 | `stage1` | 只续训 v5 阶段一 |
 | `stage1-retrain` | 覆盖并重训 v5 阶段一 |
 | `stage2` | 只续训 v5 阶段二 |
 | `stage2-retrain` | 不加载旧权重，直接从零训练 v5 阶段二 |
-| `stage2-from-v4` | 复制 v4 checkpoint，并用 v5 参数直接训练阶段二 |
+| `stage2-from-v4` | 复制 v4 checkpoint，并用 v5 参数训练阶段二 |
 | `two-stage` | 依次续训 v5 阶段一和阶段二 |
 
-v6 也可以直接通过独立脚本启动：
+v6 也可以直接启动：
 
 ```bash
 bash train_single_quad_obstacles_lidar_v6.sh bootstrap
@@ -109,154 +83,119 @@ bash train_single_quad_obstacles_lidar_v6.sh resume
 ```
 
 `bootstrap` 会调用 `swarm_rl/bootstrap_lidar_v6.py`，从 v5 best checkpoint 创建新的 v6
-实验目录；如果 v6 目录已经存在，脚本会改为从最新 checkpoint 继续。
+实验目录。若 v6 目录已经存在，脚本会改为从 latest checkpoint 继续。
+
+## 评估方法
+
+正式评估入口：
+
+```bash
+bash test_single_quad_obstacles_lidar.sh [latest|best] [v6|v5] [episodes]
+bash eval_single_quad_obstacles_lidar.sh [latest|best] [v6|v5] [episodes] [cpu|gpu]
+```
+
+等价 Python 命令示例：
+
+```bash
+python -m swarm_rl.evaluate \
+  --algo=APPO \
+  --env=quadrotor_multi \
+  --train_dir=./train_dir \
+  --experiment=single_quad_obstacles_lidar_body_cbf_v6/single_obstacles_lidar_body_cbf_v6_/00_single_obstacles_lidar_body_cbf_v6_see_0/ \
+  --load_checkpoint_kind=latest \
+  --quads_episode_duration=45.0 \
+  --eval_num_episodes=50
+```
+
+评估默认使用确定性动作、关闭渲染和 replay buffer。episode 不会在首次到达目标点后提前结束；
+环境会继续生成下一个目标点。碰撞率和成功率按“到达的目标段”统计，而不是只按整条 episode 统计：
+
+| 指标 | 含义 |
+| --- | --- |
+| 成功率 | 无碰撞到达目标点的次数 / 到达目标点总次数 |
+| 到达率 | 至少到达过一个目标点的 episode 比例 |
+| 碰撞率 | 到达目标点前发生过碰撞的目标段数 / 到达目标点总次数 |
+| episode 碰撞率 | 整条 episode 内出现过障碍物或房间碰撞的比例 |
+| 平均通过时间 | 首次到达目标区域的时间；未到达时按 episode 结束时间记录 |
+| 平均目标段时间 | 每次到达目标点前的平均用时 |
+| 平均目标段路径长度 | 每次到达目标点前的平均轨迹长度 |
+| 最小障碍物距离 | 9 方向雷达含墙面距离的 episode 内最小净空，仅作参考 |
+| 轨迹平滑性 | 平均速度变化率，数值越低通常越平滑 |
+| 卡死率 | 出现连续低速且目标距离无明显改善窗口的 episode 比例 |
+
+## 成功率判定
+
+默认成功标准位于 `test_single_quad_obstacles_lidar.sh` 和 `swarm_rl/evaluate.py`：
+
+```text
+每次到达目标点都会结算一次目标段
+该目标段内没有障碍物碰撞、房间边界碰撞或无人机碰撞，则该目标点计为成功
+success_rate = 无碰撞目标点数 / 到达目标点总数
+collision_rate = 有碰撞目标段数 / 到达目标点总数
+```
+
+这种口径不会因为 episode 在首次到达后继续飞行而把后续路径混入第一次通过结果。最小障碍物距离、
+整条 episode 路径长度和轨迹平滑性仍会输出，用于诊断策略风格，但不参与成功率判定。
+
+如需做更保守验收，可显式覆写：
+
+```bash
+python -m swarm_rl.evaluate ... \
+  --eval_success_max_path_ratio=2.5
+```
+
+## 输出位置
+
+评估结果写入：
+
+```text
+eval_results/lidar_eval_YYYYMMDD_HHMMSS.json
+eval_results/lidar_eval_YYYYMMDD_HHMMSS.csv
+```
+
+JSON 包含 summary、阈值和逐 episode 明细；CSV 便于画图和与不同 checkpoint 横向比较。
+
+训练结果仍位于：
+
+```text
+train_dir/<experiment_name>/
+```
 
 ## 项目结构
 
 ```text
 gym_art/quadrotor_multi/              四旋翼动力学、碰撞、障碍物、雷达和渲染
-gym_art/quadrotor_multi/obstacles/    柱状障碍物生成、扇区雷达子射线检测和单元测试
+gym_art/quadrotor_multi/obstacles/    柱状障碍物生成、扇区雷达和单元测试
 swarm_rl/env_wrappers/                Sample Factory 环境封装、参数和 reward shaping
 swarm_rl/models/                      策略网络和注意力层
-swarm_rl/runs/single_quad/            单无人机实验配置
+swarm_rl/runs/single_quad/            单无人机 lidar 实验配置
 swarm_rl/bootstrap_lidar_v6.py        从 v5 best 创建 v6 微调 checkpoint
-train_two_stages_corridor.sh          长走廊两阶段训练入口
-train_single_quad_obstacles_lidar.sh  雷达避障主训练入口
+swarm_rl/evaluate.py                  复合指标评估入口
+train_single_quad_obstacles_lidar.sh  主训练入口
 train_single_quad_obstacles_lidar_v6.sh  v6 微调训练入口
-test_single_quad_corridor.sh          长走廊评估入口
-test_single_quad_obstacles_lidar.sh   雷达避障评估入口
-TRAINING_IMPROVEMENTS.md              本轮训练和控制改进记录
+test_single_quad_obstacles_lidar.sh   正式评估入口
+TRAINING_IMPROVEMENTS.md              训练、控制和评估改进记录
 ```
 
-## 实现思路
+## 常见问题
 
-### 1. 两类障碍物观测分离
+**best checkpoint 一定比 latest 好吗？**
 
-`corridor` 和 `lidar` 使用不同的观测语义，因此 checkpoint 不应混用：
+不一定。best 按训练 reward 保存，reward 会受到惩罚退火和探索噪声影响。模型选型应优先比较评估 JSON 中的目标段成功率、目标段碰撞率、平均目标段时间和轨迹平滑性。
 
-- `corridor` 使用 `quads_obstacle_obs_type=octomap`，给策略提供局部 SDF 距离采样。
-- `lidar` 使用 `quads_obstacle_obs_type=lidar`，给策略提供机体系下的方向化雷达距离。
+**为什么到达率高但成功率低？**
 
-这种分离可以避免“同样维度、不同含义”的观测进入同一个策略，降低训练和迁移时的隐性错误。
+这通常说明策略能找到目标，但在到达目标点前发生过碰撞。到达率只回答“有没有到”，成功率回答“到达目标点的过程中是否无碰撞”。
 
-### 2. 九方向扇区雷达
+**评估时没有画面是不是正常？**
 
-当前雷达观测是 9 维，也就是 9 个机身 yaw 坐标系方向扇区。9 个方向每隔 40 度布置，
-每一维都表示对应扇区内最近的障碍物或墙面距离；它不是旧版“8 条中心射线 + 1 个全局
-clearance”的结构。每个方向也不是单条中心射线，而是一个小扇区：
+正常。正式评估默认关闭渲染以保证速度和可复现性。需要人工观察时运行 `python -m swarm_rl.enjoy ... --quads_render=True`。
 
-- 扇区角度默认 `30.0` 度。
-- 每个扇区采样 `5` 条子射线。
-- 返回障碍物或墙面的最近交点距离。
+**没有 `train_dir` 怎么办？**
 
-这样第 9 维也具有明确方向语义，不再是旧版无方向的全局 clearance。同时，多子射线扇区能降低
-细柱体刚好落在两条中心射线之间时的漏检概率。
-
-### 3. 机体系导航
-
-雷达任务使用 `velocity_yaw_body_avoid` 控制类型。目标方向、水平速度和雷达距离都被统一到
-无人机 yaw 机体系下，策略输出的水平速度再转换回世界坐标执行。
-
-这样做的核心目的是减少策略需要学习的坐标变换：策略看到的“前、后、左、右”始终跟机身方向一致，
-不会因为机头朝向改变而让同一个动作含义发生旋转。
-
-### 4. CBF-QP 安全过滤
-
-旧避障逻辑类似 PID 偏置，会直接向策略动作叠加修正量，容易出现策略和避障器互相拉扯。
-当前实现改为二维 CBF-QP，把策略给出的水平速度投影到安全速度集合：
-
-```text
-minimize  ||v_safe - v_policy||^2
-subject to n_i * v_safe <= alpha * (distance_i - safe_distance)
-```
-
-其中 `n_i` 是雷达方向对应的障碍物法向，`distance_i` 是雷达测距。该设计有三个好处：
-
-- 没有危险时尽量保持 RL 原始动作。
-- 接近障碍物时只移除朝向障碍物的不安全速度分量。
-- 横向绕行动作只要安全就会被保留。
-
-v5/v6 当前使用：
-
-```text
-quads_avoid_radius=1.0
-quads_cbf_safe_distance=0.3
-quads_cbf_alpha=2.0
-```
-
-相比 v4，这组参数降低了窄通道内过早限速和 QP 无解后悬停的概率。
-
-### 5. 雷达平滑和 CBF 滞回
-
-v6 加入了两项稳定性处理：
-
-```text
-quads_avoid_lidar_filter_alpha=0.5
-quads_avoid_activation_hysteresis=0.04
-```
-
-雷达 EMA 用来平滑单帧测距跳变；CBF 滞回让约束在进入危险区域后，需要距离超过
-`avoid_radius + hysteresis` 才解除。两者共同减少安全过滤器在边界附近频繁启停导致的左右抖动。
-
-### 6. v6 微调 checkpoint 初始化
-
-`swarm_rl/bootstrap_lidar_v6.py` 用于从 v5 best checkpoint 创建一个干净的 v6 起点：
-
-- 保留模型网络权重。
-- 清空 Adam 优化器状态。
-- 将学习率重置为 `3e-5`。
-- 将动作标准差重置为 `0.30`。
-- 将 `train_step` 和 `env_steps` 重置为 0。
-- 重置 best reward 记录。
-- 写入独立 v6 实验目录，不修改原 v5 结果。
-
-这样既能继承 v5 已经学到的导航能力，又能避免旧优化器动量和过大探索方差破坏微调初期稳定性。
-
-### 7. 奖励和动作稳定性
-
-v6 训练配置还包含以下稳定性约束：
-
-- `continuous_tanh_scale=1.2`：限制连续动作均值范围。
-- `BoundedActionWrapper`：在动作进入环境前按 `action_space` 硬裁剪。
-- `kl_loss_coeff=0.05`：限制策略更新幅度。
-- `anneal_collision_initial_ratio=0.125`：碰撞、平滑碰撞、障碍物碰撞和超速惩罚从最终权重的
-  12.5% 开始。
-- `anneal_collision_steps=5000000`：在 500 万环境步内线性恢复完整惩罚。
-
-这些设置主要用于降低从旧策略微调时的退化风险。
-
-## 测试覆盖
-
-`bash run_tests.sh` 覆盖的重点包括：
-
-- 九方向雷达和墙面距离计算。
-- 多子射线扇区对细障碍物的检测。
-- 目标和速度向机体系旋转。
-- CBF-QP 对危险速度的限制。
-- CBF 对安全横向速度的保留。
-- 雷达 EMA 和 CBF 启停滞回。
-- 动作空间硬裁剪。
-- Gymnasium `reset(seed, options)` 兼容。
-- v6 checkpoint 的步数、优化器和动作方差重置。
-- 障碍物最小净空生成逻辑。
-
-## 训练结果和调参记录
-
-更完整的改进过程、问题分析、v4/v5/v6 参数变化和 v6 训练结果记录在
-`TRAINING_IMPROVEMENTS.md`。
-
-训练异常时建议优先查看这些指标：
-
-- `rewraw_success`：是否真正到达目标。
-- `rewraw_progress`：是否持续向目标推进。
-- `rewraw_quadcol_obstacle`：是否被障碍物碰撞惩罚覆盖。
-- 动作标准差和 KL：判断微调是否发生策略突变。
-
-best checkpoint 只按 episode reward 保存。由于 v6 使用惩罚渐增，早期 best reward
-可能受较低惩罚权重影响；最终选型建议同时比较成功率、碰撞率、到达时间和左右速度反向切换频率。
+先训练或解压已有训练结果快照。评估脚本会检查 `train_dir/<experiment>/config.json`，缺失时会直接报错。
 
 ## 来源
 
 核心仿真代码源自 [gym_art](https://github.com/amolchanov86/gym-art)，训练框架使用
-[Sample Factory](https://github.com/alex-petrenko/sample-factory)。本仓库已整理为单无人机
-`corridor` 与 `lidar body CBF` 两条实验链。
+[Sample Factory](https://github.com/alex-petrenko/sample-factory)。本仓库已整理为单无人机 lidar body CBF 避障穿越实验工程。

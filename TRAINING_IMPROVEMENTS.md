@@ -249,11 +249,14 @@ bash train_single_quad_obstacles_lidar.sh
 # 继续最新 v6 checkpoint
 bash train_single_quad_obstacles_lidar.sh resume-v6
 
-# 测试 v6 最新 checkpoint
+# 确定性评估 v6 最新 checkpoint
 bash test_single_quad_obstacles_lidar.sh latest v6
 
-# 测试 v6 reward 最佳 checkpoint
+# 确定性评估 v6 reward 最佳 checkpoint
 bash test_single_quad_obstacles_lidar.sh best v6
+
+# 指定评估 episode 数
+bash test_single_quad_obstacles_lidar.sh best v6 100
 ```
 
 `stage2-from-v4` 会复制 v4 的配置和 checkpoint 到独立 v5 目录，再由训练命令覆盖 CBF
@@ -261,8 +264,50 @@ bash test_single_quad_obstacles_lidar.sh best v6
 状态，适合跳过重复的低密度预热。`stage2-retrain` 会覆盖已有 v5 目录并从零训练高密度
 场景，通常不如从 v4 初始化稳定。
 
-训练脚本会区分 v4、v5 与 v6 实验目录，防止覆盖原有结果。评估脚本也可以显式选择
-`latest/best` 和 `v5/v6`。
+训练脚本会区分 v4、v5 与 v6 实验目录，防止覆盖原有结果。评估脚本可以显式选择
+`latest/best`、`v5/v6` 和 episode 数。
+
+正式评估入口已经从 `swarm_rl.enjoy` 切换到 `swarm_rl.evaluate`。`enjoy` 仍用于人工可视化，
+但它只适合观察单条轨迹，不适合给出可复现结论。`evaluate` 会关闭渲染，使用确定性动作，
+并把每个 episode 的明细写入 `eval_results/lidar_eval_*.json` 和 `eval_results/lidar_eval_*.csv`。
+
+## 5.1 评估体系 v2
+
+旧日志里的成功率主要来自环境结束时的 `agent_success_rate`：无碰撞并到达目标。这个指标能快速看训练趋势，
+但对连续 waypoint 避障任务不够细。环境在到达一个目标点后会继续生成下一个目标点，因此整条 episode
+级别的路径长度和碰撞统计容易混入后续目标段。
+
+新的评估逻辑在环境侧补充了真实轨迹统计：
+
+- `eval/goal_reach_time_s`：首次进入目标区域的时间。
+- `eval/targets_reached`：episode 内到达目标点的次数。
+- `eval/target_collisions`：到达目标点前发生过碰撞的目标段数。
+- `eval/target_collision_rate`：目标段碰撞率。
+- `eval/avg_target_time_s`：到达目标点的平均用时。
+- `eval/avg_target_path_length_m`：到达目标点的平均路径长度。
+- `eval/path_length_m`：每步位置增量累计的实际路径长度。
+- `eval/path_efficiency_ratio`：实际路径长度 / 起终点直线距离。
+- `eval/min_obstacle_distance_m`：episode 内雷达含房间边界的最小净空，仅作参考。
+- `eval/mean_accel_change_mps2`：平均速度变化率，用于反映抖动和不平滑。
+- `eval/stuck_windows`：连续低速且目标距离无明显改善的窗口数。
+- `eval/near_obstacle_time_s`：净空低于 0.2 m 的累计时间，仅作参考。
+
+`swarm_rl.evaluate` 的成功率和碰撞率按目标段统计：
+
+```text
+每次到达目标点时结算一次目标段
+该目标段内没有障碍物碰撞、房间边界碰撞或无人机碰撞，则该目标点计为成功
+success_rate = 无碰撞目标点数 / 到达目标点总数
+collision_rate = 有碰撞目标段数 / 到达目标点总数
+```
+
+评估不会在首次到达目标点后提前结束 episode。这样既能观察策略在连续目标任务中的长期表现，又不会把后续
+目标段的路径长度和碰撞错误归到第一次到达上。贴障相关指标保留为诊断信息，不参与成功率判定。
+
+新 summary 中同时报告目标段成功率、目标段碰撞率、episode 碰撞率、到达率、卡死率和绕远率。
+这样可以区分三种常见退化：到达率高但目标段成功率低，说明策略会找目标但通过过程有碰撞；
+episode 碰撞率高但目标段碰撞率较低，说明碰撞可能集中在未完成的后续目标段；
+成功率低且卡死率高，说明 CBF 或策略在障碍密集处容易停住。
 
 ## 6. 自动化测试补充
 
@@ -310,7 +355,7 @@ bash test_single_quad_obstacles_lidar.sh best v6
 按照本轮优化范围，没有继续实施额外的第二步训练策略。后续可在独立实验中考虑：
 
 - 增加动作变化率或 jerk 惩罚，直接约束相邻动作的快速反向。
-- 用确定性评估量化左右摇摆，而不是只依赖训练 reward。
+- 继续用确定性评估量化左右摇摆，而不是只依赖训练 reward。
 - 基于成功率和碰撞率联合保存 checkpoint，避免只按总 reward 选模型。
 - 调整最终阶段 CBF 参数或碰撞权重，进一步降低碰撞而不过度牺牲通过率。
 
